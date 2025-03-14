@@ -51,14 +51,4 @@ In the profile screen, users can see their scan history: a list of the items the
 
 
 
-## Authors
-Sponsor: Mudd Entrepreneurship Studio 2024 
 
-Advisors: 
-* [Zachary Dodds](https://www.cs.hmc.edu/~dodds/): Professor of Computer Science at Harvey Mudd College
-* [Michael Izbicki](https://izbicki.me/): Assistant Professor of Computer Science
-
-Made with 🌎 by:
-* [My Nguyen](https://mynguyen.vercel.app/): Project Manager
-* [Terence Chen](https://github.com/TCHEN621130): UI/UX Lead
-* [William Koh](https://kohdingjourney.netlify.app/): Lead Developer
