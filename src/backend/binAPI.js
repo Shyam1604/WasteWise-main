@@ -192,7 +192,7 @@ export const analyzeImage = async (base64) => {
         garbageKeywords.includes(item.label.toLowerCase()) &&
         item.score >= 0.50
     );
-
+    console.log("is garbage: ", isGarbage)
     return true;
   } catch (error) {
     console.error("Failed to analyze image:", error);

@@ -21,19 +21,19 @@ const FIREBASE_AUTH = initializeAuth(FIREBASE_APP, {
 });
 const FIREBASE_STORAGE = getStorage(FIREBASE_APP);
 
-export { 
-  FIREBASE_APP, 
-  FIREBASE_AUTH, 
-  FIRESTORE_DB, 
+export {
+  FIREBASE_APP,
+  FIREBASE_AUTH,
+  FIRESTORE_DB,
   FIREBASE_STORAGE,
-  collection, 
-  addDoc, 
-  getDocs, 
-  updateDoc, 
-  setDoc, 
-  doc, 
-  getDoc, 
-  query, 
-  where 
+  collection,
+  addDoc,
+  getDocs,
+  updateDoc,
+  setDoc,
+  doc,
+  getDoc,
+  query,
+  where
 };
 

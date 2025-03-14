@@ -13,17 +13,17 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { getAuth } from 'firebase/auth';
 
 // Import Firestore functions
-import { 
-  FIRESTORE_DB, 
-  GeoPoint, 
-  Timestamp, 
-  collection, 
-  addDoc, 
-  getDocs, 
-  updateDoc, 
-  doc, 
-  setDoc, 
-  getDoc, 
+import {
+  FIRESTORE_DB,
+  GeoPoint,
+  Timestamp,
+  collection,
+  addDoc,
+  getDocs,
+  updateDoc,
+  doc,
+  setDoc,
+  getDoc,
   deleteDoc,
   // onSnapshot,
   increment
@@ -72,7 +72,7 @@ const MapScreen = ({ route }) => {
     >
       <TouchableWithoutFeedback onPress={() => setTypeModalVisible(false)}>
         <View style={styles.modalContainer}>
-          <TouchableWithoutFeedback onPress={() => {}}>
+          <TouchableWithoutFeedback onPress={() => { }}>
             <View style={styles.modalContentType}>
               <Text style={styles.modalTitle}>Select Types</Text>
               <View style={styles.optionsContainer}>
@@ -271,6 +271,73 @@ const MapScreen = ({ route }) => {
     }
   };
 
+  // const handleAddBin = async () => {
+  //   setIsLoading(true);
+  //   try {
+  //     const auth = getAuth();
+  //     const user = auth.currentUser;
+
+  //     if (!user) {
+  //       setAlertMessage('User is not authenticated');
+  //       setAlertVisible(true);
+  //       return;
+  //     }
+
+  //     const imageId = await uploadImageToFirebase(binImageUri);
+
+  //     console.log("image uploaded to firebase")
+
+  //     if (!imageId) {
+  //       setAlertMessage('Failed to upload image');
+  //       setAlertVisible(true);
+  //       return;
+  //     }
+
+  //     const newBinData = {
+  //       binDescription: binDescription,
+  //       binImageId: imageId,
+  //       binType: selectedTypes,
+  //       addedBy: user.uid,
+  //       binApproval: null,
+  //       binLocation: new GeoPoint(location.coords.latitude, location.coords.longitude),
+  //       dateAdded: Timestamp.fromDate(new Date()),
+  //     };
+
+  //     console.log('Attempting to add new bin data:', newBinData);
+
+  //     const docRef = await addDoc(collection(FIRESTORE_DB, 'bins'), newBinData);
+
+  //     console.log('New bin added with ID:', docRef.id);
+
+  //     const newMarker = {
+  //       id: docRef.id,
+  //       latitude: location.coords.latitude,
+  //       longitude: location.coords.longitude,
+  //       binImageId: imageId,
+  //       description: binDescription,
+  //       types: selectedTypes,
+  //       reports: []
+  //     };
+
+  //     setMarkers(prevMarkers => [...prevMarkers, newMarker]);
+  //     setModalVisible(false);
+  //     setInputModalVisible(false);
+  //     setBinDescription('');
+  //     setTypeModalVisible(false);
+  //     setBinImageUri(null);
+  //     setSelectedTypes([]);
+
+  //     setAlertMessage('Bin successfully added!');
+  //     setAlertVisible(true);
+  //   } catch (error) {
+  //     console.error('Error adding bin to database:', error);
+  //     setAlertMessage('Failed to add bin to database: ' + error.message);
+  //     setAlertVisible(true);
+  //   } finally {
+  //     setIsLoading(false);
+  //   }
+  // };
+
   const handleAddBin = async () => {
     setIsLoading(true);
     try {
@@ -285,20 +352,35 @@ const MapScreen = ({ route }) => {
 
       const imageId = await uploadImageToFirebase(binImageUri);
 
+      console.log("image uploaded to firebase")
+
       if (!imageId) {
         setAlertMessage('Failed to upload image');
         setAlertVisible(true);
         return;
       }
 
+      // Check if location exists and has the correct structure
+      if (!location) {
+        setAlertMessage('Location data not available');
+        setAlertVisible(true);
+        return;
+      }
+      console.log("location data: ", location.latitude)
+
+      // Use the correct location structure
+      // If location already has latitude/longitude directly
       const newBinData = {
         binDescription: binDescription,
         binImageId: imageId,
         binType: selectedTypes,
         addedBy: user.uid,
         binApproval: null,
-        binLocation: new GeoPoint(location.coords.latitude, location.coords.longitude),
-        dateAdded: Timestamp.fromDate(new Date()),
+        binLocation: {
+          latitude: location.latitude || (location.coords && location.coords.latitude),
+          longitude: location.longitude || (location.coords && location.coords.longitude)
+        },
+        dateAdded: new Date(),
       };
 
       console.log('Attempting to add new bin data:', newBinData);
@@ -309,8 +391,8 @@ const MapScreen = ({ route }) => {
 
       const newMarker = {
         id: docRef.id,
-        latitude: location.coords.latitude,
-        longitude: location.coords.longitude,
+        latitude: location.latitude || (location.coords && location.coords.latitude),
+        longitude: location.longitude || (location.coords && location.coords.longitude),
         binImageId: imageId,
         description: binDescription,
         types: selectedTypes,
@@ -814,7 +896,7 @@ const MapScreen = ({ route }) => {
           <ActivityIndicator size="large" color="#9ee8a4" />
         </View>
       )}
-      
+
       <TouchableOpacity
         style={{
           width: '90%',
