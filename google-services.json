@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1005452209652",
+    "project_id": "wastewise-cc5ee",
+    "storage_bucket": "wastewise-cc5ee.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1005452209652:android:fba71e3c43f68ea9975da1",
+        "android_client_info": {
+          "package_name": "com.example.myapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCQ09X9aL9WF290gL9R6dX-mJzaFZjZ69M"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

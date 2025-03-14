@@ -1,0 +1,5232 @@
+
+// --- C:\Users\S\Desktop\assignments-master\WasteWise-main\WasteWise-main\src\backend\binAPI.js ---
+
+import OpenAI from 'openai';
+import { OPENAI_API_KEY } from '@env';
+import { Alert } from 'react-native';
+
+const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
+
+export const analyzeImage = async (base64) => {
+  const prompt = "Classify the object in the image as 'bin' or 'not bin'. Return 'true' if the object is a bin and 'false' otherwise.";
+
+  const params = {
+    model: "gpt-4o",
+    messages: [
+      {
+        role: "system",
+        content: "You are a helpful assistant designed to classify images.",
+      },
+      {
+        role: "user",
+        content: [
+          { type: "text", text: prompt },
+          {
+            type: "image_url",
+            image_url: {
+              "url": `data:image/jpeg;base64,${base64}`,
+              "detail": "low"
+            },
+          },
+        ],
+      },
+    ],
+  };
+
+  try {
+    const response = await openai.chat.completions.create(params);
+    const result = response.choices[0].message.content.trim().toLowerCase();
+
+    console.log('OpenAI API Response:', result);
+
+    if (result === 'true') {
+      return true;
+    } else if (result === 'false') {
+      return false;
+    } else {
+      console.error('Unexpected response:', result);
+      Alert.alert('Error', 'Unexpected response from the image analysis');
+      return false;
+    }
+    } catch (error) {
+        console.error('Failed to analyze image:', error);
+        Alert.alert('Error', 'Failed to analyze image');
+        return false;
+    }
+};
+
+
+// --- C:\Users\S\Desktop\assignments-master\WasteWise-main\WasteWise-main\src\backend\settingStack.js ---
+
+import React, { useContext } from 'react';
+import { createStackNavigator } from '@react-navigation/stack';
+import { StyleSheet, View, Text } from 'react-native';
+import Settings from '../components/settingsPage';
+import UserSettings from '../backend/userSettings';
+import ThemeContext from '../context/ThemeContext';
+
+const Stack = createStackNavigator();
+
+export default function SettingsStack( {onUpdateBio} ) {
+  const { theme } = useContext(ThemeContext);
+
+  const styles = StyleSheet.create({
+    headerStyle: {
+      backgroundColor: theme === 'dark' ? '#042222' : '#C4D8BF',
+      shadowOpacity: 0,
+    },
+    headerTitleStyle: {
+      fontWeight: 'medium',
+      fontFamily: 'Nunito',
+      color: theme === 'dark' ? '#C4D8BF' : '#2D5A3D',
+    },
+    headerButtonStyle: {
+      color: theme === 'dark' ? '#C4D8BF' : '#2D5A3D', // Style for header buttons
+      fontSize: 5, 
+    },
+  });
+
+  return (
+    <Stack.Navigator
+      screenOptions={{
+        headerStyle: styles.headerStyle,
+        headerTitleStyle: styles.headerTitleStyle,
+        headerTintColor: styles.headerButtonStyle.color,
+      }}
+    >
+      <Stack.Screen
+        name="SettingsPage"
+        component={Settings}
+        options={{
+          headerShown: false, // Hide the header for this screen if needed
+          title: '',
+        }}
+      />
+      <Stack.Screen
+        name="UserSettings"
+        options={{
+          title: 'Edit Profile',
+          headerStyle: styles.headerStyle,
+          headerTitleStyle: styles.headerTitleStyle,
+        }}
+      >
+        {props => <UserSettings {...props} onUpdateBio={onUpdateBio} />}
+      </Stack.Screen>
+    </Stack.Navigator>
+  );
+}
+
+
+// --- C:\Users\S\Desktop\assignments-master\WasteWise-main\WasteWise-main\src\backend\userSettings.js ---
+
+import React, { useState, useContext } from 'react';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, SafeAreaView, Modal } from 'react-native';
+import { FIREBASE_AUTH, FIRESTORE_DB } from '../../firebaseConfig';
+import { doc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { sendPasswordResetEmail, signOut, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
+import { useNavigation } from '@react-navigation/native';
+import ThemeContext from '../context/ThemeContext';
+
+export default function UserSettings({ onUpdateBio }) {
+  const { theme, toggleTheme } = useContext(ThemeContext);
+  const [bio, setBio] = useState('');
+  const [password, setPassword] = useState('');
+  const [modalVisible, setModalVisible] = useState(false);
+  const navigation = useNavigation();
+
+  const handleChangePassword = () => {
+    const user = FIREBASE_AUTH.currentUser;
+    if (user) {
+      sendPasswordResetEmail(FIREBASE_AUTH, user.email)
+        .then(() => {
+          Alert.alert('Success', 'Password reset email sent!');
+        })
+        .catch(error => {
+          Alert.alert('Error', error.message);
+        });
+    }
+  };
+
+  const handleChangeBio = async () => {
+    const user = FIREBASE_AUTH.currentUser;
+    if (user) {
+      const userDocRef = doc(FIRESTORE_DB, 'users', user.uid);
+      try {
+        await updateDoc(userDocRef, { bio });
+        onUpdateBio(bio);
+        Alert.alert('Success', 'Bio updated successfully!');
+      } catch (error) {
+        Alert.alert('Error', error.message);
+      }
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    const user = FIREBASE_AUTH.currentUser;
+    if (user) {
+      const credential = EmailAuthProvider.credential(user.email, password);
+      try {
+        await reauthenticateWithCredential(user, credential);
+        const userDocRef = doc(FIRESTORE_DB, 'users', user.uid);
+        await deleteDoc(userDocRef);
+        await user.delete();
+        await signOut(FIREBASE_AUTH);
+        Alert.alert('Success', 'Account deleted successfully!');
+        navigation.navigate('LoginScreen'); // Ensure this matches your route name
+      } catch (error) {
+        Alert.alert('Error', error.message);
+      }
+    }
+  };
+
+  const openModal = () => {
+    setModalVisible(true);
+  };
+
+  const closeModal = () => {
+    setModalVisible(false);
+  };
+
+  const handleConfirmDelete = async () => {
+    closeModal();
+    await handleDeleteAccount();
+  };
+
+  const styles = StyleSheet.create({
+    container: {
+      flex: 1,
+      padding: 16,
+      backgroundColor: theme === 'dark' ? '#042222' : '#C4D8BF',
+    },
+    inputContainer: {
+      alignItems: 'center', // Center horizontally
+      marginTop: 20,
+      marginBottom: 20,
+    },
+    input: {
+      width: '80%',
+      height: 50,
+      borderColor: theme === 'dark' ? '#C4D8BF90' : '#2D5A3D',
+      borderWidth: 1,
+      borderRadius: 5,
+      paddingHorizontal: 10,
+      marginVertical: 10,
+      color: theme === 'dark' ? '#C4D8BF' : '#2D5A3D', // Text color
+    },
+    button: {
+      width: '80%',
+      height: 50,
+      borderRadius: 5,
+      justifyContent: 'center',
+      alignItems: 'center',
+      backgroundColor: theme === 'dark' ? '#639460' : '#387a4d',
+      marginVertical: 10,
+    },
+    buttonText: {
+      color: '#fff',
+      fontSize: 18,
+    },
+    modalContainer: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    },
+    modalContent: {
+      width: '80%',
+      padding: 20,
+      backgroundColor: theme === 'dark' ? '#042222' : '#C4D8BF',
+      borderRadius: 10,
+      alignItems: 'center',
+    },
+    modalInput: {
+      width: '100%',
+      height: 50,
+      borderColor: theme === 'dark' ? '#C4D8BF90' : '#2D5A3D',
+      borderWidth: 1,
+      borderRadius: 5,
+      paddingHorizontal: 10,
+      marginVertical: 10,
+      color: theme === 'dark' ? '#C4D8BF' : '#2D5A3D', // Text color
+    },
+    modalButton: {
+      width: '100%',
+      height: 50,
+      borderRadius: 5,
+      justifyContent: 'center',
+      alignItems: 'center',
+      backgroundColor: theme === 'dark' ? '#639460' : '#387a4d',
+      marginVertical: 10,
+    },
+    modalButtonText: {
+      color: '#fff',
+      fontSize: 18,
+    },
+  });
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.inputContainer}>
+        <TextInput
+          style={styles.input}
+          placeholder="Change Bio"
+          placeholderTextColor={theme === 'dark' ? '#C4D8BF90' : '#2D5A3D90'}
+          value={bio}
+          onChangeText={text => setBio(text)}
+        />
+        <TouchableOpacity style={styles.button} onPress={handleChangeBio}>
+          <Text style={styles.buttonText}>Change Bio</Text>
+        </TouchableOpacity>
+      </View>
+      <View style={styles.inputContainer}>
+        <TouchableOpacity style={styles.button} onPress={handleChangePassword}>
+          <Text style={styles.buttonText}>Change Password</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.button} onPress={openModal}>
+          <Text style={styles.buttonText}>Delete Account</Text>
+        </TouchableOpacity>
+      </View>
+
+      <Modal
+        transparent={true}
+        animationType="slide"
+        visible={modalVisible}
+        onRequestClose={closeModal}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="Enter your password"
+              placeholderTextColor={theme === 'dark' ? '#C4D8BF90' : '#2D5A3D90'}
+              value={password}
+              secureTextEntry
+              onChangeText={text => setPassword(text)}
+            />
+            <TouchableOpacity style={styles.modalButton} onPress={handleConfirmDelete}>
+              <Text style={styles.modalButtonText}>Confirm Delete</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.modalButton} onPress={closeModal}>
+              <Text style={styles.modalButtonText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    </SafeAreaView>
+  );
+}
+
+
+// --- C:\Users\S\Desktop\assignments-master\WasteWise-main\WasteWise-main\src\components\alertModal.js ---
+
+import React, { useContext } from 'react';
+import { Modal, View, Text, TouchableOpacity, StyleSheet, TouchableWithoutFeedback } from 'react-native';
+import ThemeContext from '../context/ThemeContext';
+
+const CustomAlert = ({ visible, title, message, onClose, onConfirm }) => {
+  const { theme } = useContext(ThemeContext);
+
+  const styles = StyleSheet.create({
+    modalContainer: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      backgroundColor: 'transparent',
+    },
+    modalContent: {
+      width: '80%',
+      backgroundColor: theme === 'dark' ? '#04222295' : '#C4D8BF',
+      padding: 20,
+      borderRadius: 10,
+      alignItems: 'center',
+      position: 'relative',
+    },
+    sectionContainer: {
+      width: '100%',
+      marginBottom: 15,
+      alignItems: 'flex-start',
+    },
+    headerSection: {
+      fontFamily: 'Nunito-Bold',
+      fontSize: 20,
+      marginBottom: 8,
+      color: theme === 'dark' ? '#C4D8BF' : '#2D5A3D',
+      textAlign: 'left',
+    },
+    paragraph: {
+      fontFamily: 'Nunito-Regular',
+      fontSize: 16,
+      marginBottom: 8,
+      textAlign: 'left',
+      color: theme === 'dark' ? '#C4D8BF' : '#2D5A3D',
+    },
+    button: {
+      marginTop: 20,
+      paddingVertical: 10,
+      paddingHorizontal: 20,
+      borderWidth: 2,
+      borderColor: theme === 'dark' ? '#C4D8BF' : '#2D5A3D',
+      width: '65%',
+      alignSelf: 'center',
+    },
+    buttonText: {
+      fontSize: 16,
+      color: theme === 'dark' ? '#C4D8BF' : '#2D5A3D',
+      textAlign: 'center',
+    },
+  });
+
+  return (
+    <Modal
+      animationType="slide"
+      transparent={true}
+      visible={visible}
+      onRequestClose={onClose}
+    >
+      <TouchableWithoutFeedback onPress={onClose}>
+        <View style={styles.modalContainer}>
+          <TouchableWithoutFeedback onPress={() => {}}>
+            <View style={styles.modalContent}>
+              <View style={styles.sectionContainer}>
+                <Text style={styles.headerSection}>{title}</Text>
+                <Text style={styles.paragraph}>{message}</Text>
+              </View>
+              <TouchableOpacity onPress={onConfirm || onClose} style={styles.button}>
+                <Text style={styles.buttonText}>OK</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableWithoutFeedback>
+        </View>
+      </TouchableWithoutFeedback>
+    </Modal>
+  );
+};
+
+export default CustomAlert;
+
+
+// --- C:\Users\S\Desktop\assignments-master\WasteWise-main\WasteWise-main\src\components\appNavigator.js ---
+
+import React, { useContext } from 'react';
+import { NavigationContainer } from '@react-navigation/native';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createStackNavigator } from '@react-navigation/stack';
+import Ionicons from 'react-native-vector-icons/Ionicons';
+import ThemeContext from '../context/ThemeContext';
+
+// Screens
+import HomeScreen from '../screens/HomeScreen';
+import MapScreen from '../screens/MapScreen';
+import ProfileScreen from '../screens/ProfileScreen';
+import Scan from '../screens/Scan';
+import CameraScreen from '../screens/cameraScreen';
+import UploadScreen from '../screens/UploadScreen';
+import CreateAccount from '../screens/CreateAccount';
+import StartingScreen from '../screens/StartingScreen';
+import InfoScreen from '../screens/infoScreen';
+import { TouchableOpacity } from 'react-native';
+import GuestHomeScreen from '../screens/GuestHomeScreen';
+import GuestProfileScreen from '../screens/GuestProfileScreen';
+import LoginScreen from '../screens/LoginScreen';
+import Identifier from '../screens/Identifier';
+import AboutUs from '../screens/AboutUs';
+
+// Screen names
+const homeName = 'Home';
+const mapName = 'Map';
+const profileName = 'Profile';
+const scannerName = 'Scanner';
+const infoName = 'Info';
+const guestHomeName = 'GuestHome';
+
+const Tab = createBottomTabNavigator();
+const Stack = createStackNavigator();
+
+const CustomTabButton = (props) => (
+  <TouchableOpacity
+    {...props}
+    style={
+      props.accessibilityState.selected
+        ? [props.style, { borderTopColor: '#2D5A3D', borderTopWidth: 2 }]
+        : props.style
+    }
+  />
+);
+
+const ScanStack = () => (
+  <Stack.Navigator screenOptions={{ headerShown: false, gestureEnabled: false }}>
+    <Stack.Screen name="ScannerStack" component={Scan} />
+    <Stack.Screen name="ScanItem" component={CameraScreen} />
+    <Stack.Screen name="UploadImage" component={UploadScreen} />
+  </Stack.Navigator>
+);
+
+const AuthStack = () => (
+  <Stack.Navigator screenOptions={{ headerShown: false, gestureEnabled: false }}>
+    <Stack.Screen name="Starting" component={StartingScreen} />
+    <Stack.Screen name="CreateAccount" component={CreateAccount} />
+    <Stack.Screen name="LoginScreen" component={LoginScreen} />
+    <Stack.Screen name="GuestTabs" component={GuestTabs} />
+    <Stack.Screen name="Info" component={InfoScreen} />
+  </Stack.Navigator>
+);
+
+const MainStack = ({ theme }) => (
+  <Stack.Navigator screenOptions={{ headerShown: false, gestureEnabled: false }}>
+    <Stack.Screen name="AppTabs">
+      {(props) => <AppTabs {...props} theme={theme} />}
+    </Stack.Screen>
+    <Stack.Screen name="Info" component={InfoScreen} />
+    <Stack.Screen name="Identify" component={Identifier}/>
+    <Stack.Screen name="AboutUs" component={AboutUs} />
+  </Stack.Navigator>
+);
+
+const GuestTabs = ({ theme }) => (
+  <Tab.Navigator
+    screenOptions={({ route }) => ({
+      tabBarIcon: ({ focused, color, size }) => {
+        let iconName;
+
+        if (route.name === homeName) {
+          iconName = focused ? 'home' : 'home-outline';
+        } else if (route.name === mapName) {
+          iconName = focused ? 'navigate' : 'navigate-outline';
+        } else if (route.name === profileName) {
+          iconName = focused ? 'person' : 'person-outline';
+        } else if (route.name === scannerName) {
+          iconName = focused ? 'camera' : 'camera-outline';
+        } else if (route.name === infoName) {
+          iconName = focused ? 'information-circle' : 'information-circle-outline';
+        }
+
+        return <Ionicons name={iconName} size={size} color={color} />;
+      },
+      tabBarActiveTintColor: theme === 'dark' ? '#99DAB3' : '#2D5A3D',
+      tabBarInactiveTintColor: theme === 'dark' ? '#FFF' : '#2D5A3D',
+      headerShown: false,
+      tabBarInactiveBackgroundColor: theme === 'dark' ? '#042222' : '#C4D8BF',
+      tabBarActiveBackgroundColor: theme === 'dark' ? '#042222' : '#C4D8BF',
+      tabBarStyle: { backgroundColor: theme === 'dark' ? '#042222' : '#C4D8BF', shadowColor: 'transparent', elevation: 0, borderBlockColor: 'transparent' },
+    })}
+  >
+    <Tab.Screen name={homeName} component={GuestHomeScreen} options={{ tabBarButton: CustomTabButton }} />
+    <Tab.Screen name={mapName} component={MapScreen} options={{ tabBarButton: CustomTabButton }} />
+    <Tab.Screen name={scannerName} component={ScanStack} options={{ tabBarButton: CustomTabButton }} />
+    <Tab.Screen name={infoName} component={InfoScreen} options={{ tabBarButton: CustomTabButton }} />
+    <Tab.Screen name={profileName} component={GuestProfileScreen} options={{ tabBarButton: CustomTabButton }} />
+  </Tab.Navigator>
+);
+
+const AppTabs = ({ theme }) => (
+  <Tab.Navigator
+    screenOptions={({ route }) => ({
+      tabBarIcon: ({ focused, color, size }) => {
+        let iconName;
+
+        if (route.name === homeName) {
+          iconName = focused ? 'home' : 'home-outline';
+        } else if (route.name === mapName) {
+          iconName = focused ? 'navigate' : 'navigate-outline';
+        } else if (route.name === profileName) {
+          iconName = focused ? 'person' : 'person-outline';
+        } else if (route.name === scannerName) {
+          iconName = focused ? 'camera' : 'camera-outline';
+        } else if (route.name === infoName) {
+          iconName = focused ? 'information-circle' : 'information-circle-outline';
+        }
+
+        return <Ionicons name={iconName} size={size} color={color} />;
+      },
+      tabBarActiveTintColor: theme === 'dark' ? '#99DAB3' : '#2D5A3D',
+      tabBarInactiveTintColor: theme === 'dark' ? '#FFF' : '#2D5A3D',
+      headerShown: false,
+      tabBarInactiveBackgroundColor: theme === 'dark' ? '#042222' : '#C4D8BF',
+      tabBarActiveBackgroundColor: theme === 'dark' ? '#042222' : '#C4D8BF',
+      tabBarStyle: { backgroundColor: theme === 'dark' ? '#042222' : '#C4D8BF', shadowColor: 'transparent', elevation: 0, borderBlockColor: 'transparent' },
+    })}
+  >
+    <Tab.Screen name={homeName} component={HomeScreen} options={{ tabBarButton: CustomTabButton }} />
+    <Tab.Screen name={mapName} component={MapScreen} options={{ tabBarButton: CustomTabButton }} />
+    <Tab.Screen name={scannerName} component={Identifier} options={{ tabBarButton: CustomTabButton }} />
+    <Tab.Screen name={infoName} component={InfoScreen} options={{ tabBarButton: CustomTabButton }} />
+    <Tab.Screen name={profileName} component={ProfileScreen} options={{ tabBarButton: CustomTabButton }} />
+  </Tab.Navigator>
+);
+
+export default function AppNavigator({ isAuthenticated }) {
+  const { theme } = useContext(ThemeContext);
+  return (
+    <NavigationContainer>
+      {isAuthenticated ? <MainStack key="main" theme={theme}/> : <AuthStack key="auth" theme={theme}/>}
+    </NavigationContainer>
+  );
+}
+
+
+// --- C:\Users\S\Desktop\assignments-master\WasteWise-main\WasteWise-main\src\components\BinModal.js ---
+
+import React, { useContext } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Modal, TouchableWithoutFeedback } from 'react-native';
+import ThemeContext from '../context/ThemeContext';
+
+export default function BinModal({ visible, onClose, onNavigate }) {
+    const { theme } = useContext(ThemeContext);
+
+    const styles = StyleSheet.create({
+        modalContainer: {
+            flex: 1,
+            justifyContent: 'center',
+            alignItems: 'center',
+            backgroundColor: 'transparent',
+        },
+        modalContent: {
+            width: '80%',
+            backgroundColor: theme === 'dark' ? '#04222290' : '#C4D8BF',
+            padding: 20,
+            borderRadius: 10,
+            alignItems: 'center',
+            position: 'relative',
+        },
+        sectionContainer: {
+            width: '100%',
+            marginBottom: 15,
+            alignItems: 'flex-start',
+        },
+        headerSection: {
+            fontFamily: 'Nunito-Bold',
+            fontSize: 20,
+            marginBottom: 8,
+            color: theme === 'dark' ? '#C4D8BF' : '#2D5A3D',
+            textAlign: 'left',
+        },
+        paragraph: {
+            fontFamily: 'Nunito-Regular',
+            fontSize: 16,
+            marginBottom: 8,
+            textAlign: 'left',
+            color: theme === 'dark' ? '#C4D8BF' : '#2D5A3D',
+        },
+        stepsContainer: {
+            flexDirection: 'row',
+            width: '100%',
+            paddingHorizontal: 20,
+            marginBottom: 20,
+        },
+        verticalLine: {
+            width: 1.5,
+            backgroundColor: '#2D5A3D',
+            marginRight: 10,
+            color: '#2D5A3D',
+        },
+        stepsContent: {
+            flex: 1,
+        },
+        button: {
+            marginTop: 20,
+            paddingVertical: 10,
+            paddingHorizontal: 20,
+            borderWidth: 2,
+            borderColor: theme === 'dark' ? '#C4D8BF' : '#2D5A3D',
+            width: '65%',
+            alignSelf: 'center',
+        },
+        buttonText: {
+            fontSize: 16,
+            color: theme === 'dark' ? '#C4D8BF' : '#2D5A3D',
+            textAlign: 'center',
+        },
+    });
+
+    return (
+        <Modal
+            animationType="slide"
+            transparent={true}
+            visible={visible}
+            onRequestClose={onClose}
+        >
+            <TouchableWithoutFeedback onPress={onClose}>
+                <View style={styles.modalContainer}>
+                    <TouchableWithoutFeedback onPress={() => {}}>
+                        <View style={styles.modalContent}>
+                            <View style={styles.sectionContainer}>
+                                <View style={styles.intro}>
+                                    <Text style={styles.paragraph}>
+                                        See a bin that doesn’t show up in our maps?
+                                    </Text>
+                                </View>
+                            </View>
+                            <View style={styles.sectionContainer}>
+                                <Text style={styles.headerSection}>
+                                    Contribute to the Community,{'\n'}
+                                    Add a Bin.
+                                </Text>
+                            </View>
+                            <View style={styles.sectionContainer}>
+                                <View style={styles.stepsContainer}>
+                                    <View style={styles.verticalLine} />
+                                    <View style={styles.stepsContent}>
+                                        <Text style={styles.paragraph}>
+                                            1. Walk to the bin{'\n'}
+                                            2. Take a picture{'\n'}
+                                            3. Contribute to the community!{'\n\n'}
+                                            Happy Recycling
+                                        </Text>
+                                    </View>
+                                </View>
+                            </View>
+                            <TouchableOpacity style={styles.button} onPress={onNavigate}>
+                                <Text style={styles.buttonText}>Add My Bin</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </TouchableWithoutFeedback>
+                </View>
+            </TouchableWithoutFeedback>
+        </Modal>
+    );
+}
+
+
+// --- C:\Users\S\Desktop\assignments-master\WasteWise-main\WasteWise-main\src\components\darkMode.js ---
+
+
+
+// --- C:\Users\S\Desktop\assignments-master\WasteWise-main\WasteWise-main\src\components\GuestProfileHeader.js ---
+
+import React, { useContext } from 'react';
+import { View, Text, Image, StyleSheet, Dimensions, TouchableOpacity } from 'react-native';
+import ThemeContext from '../context/ThemeContext';
+import { AntDesign } from '@expo/vector-icons';
+import { FIREBASE_AUTH } from '../../firebaseConfig';
+
+
+/**
+ * SCALING STUFF
+ */
+const { height, width } = Dimensions.get('window');
+const HEADER_HEIGHT = height * 0.20;
+const LEFT_MARGIN = width * 0.2;
+
+const GuestProfileHeader = ({ profileImage, username, bio, navigation }) => {
+
+  const { theme, toggleTheme } = useContext(ThemeContext);
+
+  const styles = StyleSheet.create({
+    headerContainer: {
+      height: HEADER_HEIGHT,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingTop: 40,
+      paddingLeft: 40,
+      backgroundColor: theme === 'dark' ? '#042222' : '#C4D8BF',
+      marginBottom: -20, // Negative margin to reduce space between header and next item
+    },
+    profileImage: {
+      width: HEADER_HEIGHT * 0.50, // Adjust the size to fit your design
+      height: HEADER_HEIGHT * 0.50,
+      borderRadius: (HEADER_HEIGHT * 0.6) / 2,
+      marginRight: 10,
+    },
+    textContainer: {
+      padding: 12,
+      flex: 1,
+    },
+    username: {
+      fontSize: 18,
+      fontWeight: 'bold',
+      color: theme === 'dark' ? '#C4D8BF' : '#2D5A3D',
+    },
+    bio: {
+      fontSize: 14,
+      color: theme === 'dark' ? '#C4D8BF' : '#2D5A3D',
+    },
+    logoutButton: {
+      position: 'absolute',
+      top: 50,
+      right: 20,
+      padding: 10,
+      borderRadius: 5,
+    }
+  });
+  return (
+    <View style={styles.headerContainer}>
+      <Image source={{ uri: profileImage }} style={styles.profileImage} />
+      <View style={styles.textContainer}>
+        <Text style={styles.username}>{username}</Text>
+        <Text style={styles.bio}>{bio}</Text>
+      </View>
+      <TouchableOpacity
+        style={styles.logoutButton}
+        onPress={() => navigation.navigate("Starting")}
+        underlayColor="#68A77C" // Color when pressed, doesn't work yet
+      >
+        <AntDesign name="logout" size={20} color={theme === 'dark' ? '#C4D8BF' : '#2D5A3D'} />
+      </TouchableOpacity>
+    </View>
+  );
+};
+
+
+
+export default GuestProfileHeader;
+
+
+// --- C:\Users\S\Desktop\assignments-master\WasteWise-main\WasteWise-main\src\components\headerLogo.js ---
+
+import React, { useContext } from 'react';
+import { View, Text, StyleSheet } from 'react-native';
+import ThemeContext from '../context/ThemeContext';
+
+
+export default function HeaderLogo() {
+
+    const { theme, toggleTheme } = useContext(ThemeContext);
+
+
+    const styles = StyleSheet.create({
+        title_container: {
+            alignItems: 'center',
+            marginBottom: 20,
+            width: '100%', // Ensure the container takes the full width
+            paddingHorizontal: 20, // Add padding to make the line appear properly
+            paddingTop: 5,
+        },
+
+        title: {
+            fontSize: 30,
+            fontFamily: 'Nunito-Regular',
+            color: theme === 'dark' ? '#00DF82' : '#34724B',
+        },
+
+        title2: {
+            color: '#FCFCFE',
+            fontFamily: 'Nunito-Regular',
+        },
+
+        horizontalLine: {
+            marginTop: 10, // Space between the title and the line
+            width: '120%', // Full width
+            height: 1, // Line height
+            backgroundColor: theme === 'dark' ? '#264131' : '#82B37A', // Line color
+        },
+    });
+
+    return (
+        <View style={styles.title_container}>
+            <Text style={styles.title}>
+                Waste
+                <Text style={styles.title2}>Wise</Text>
+                {/* <FontAwesome name="recycle" size={40} color="#2D5A3D" /> */}
+            </Text>
+            <View style={styles.horizontalLine} />
+        </View>
+    );
+}
+
+
+
+
+// --- C:\Users\S\Desktop\assignments-master\WasteWise-main\WasteWise-main\src\components\Leaderboard.js ---
+
+import React, { useEffect, useState, useContext } from 'react';
+import { StyleSheet, Text, View, FlatList, ActivityIndicator, SafeAreaView, Image } from 'react-native';
+import ThemeContext from '../context/ThemeContext';
+
+// Mock data fetching function
+const fetchLeaderboardData = async () => {
+  // Replace this with your actual data fetching logic
+  return new Array(20).fill(null).map((_, index) => ({
+    id: `${index}`,
+    name: `gingeRon ${index}`,
+    city: `London ${index}`,
+    recycledItems: Math.floor(Math.random() * 100), // Random number of recycled items
+    photoUrl: 'https://i.pinimg.com/564x/f7/f9/a4/f7f9a42c7b7087b2b5913a1a5bf7c47f.jpg', // Placeholder image URL, replace with actual image URLs
+  }));
+};
+
+export default function Leaderboard({ navigation }) {
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const { theme, toggleTheme } = useContext(ThemeContext);
+
+  useEffect(() => {
+    const loadData = async () => {
+      setLoading(true);
+      const newData = await fetchLeaderboardData();
+      setData(newData);
+      setLoading(false);
+    };
+    loadData();
+  }, []);
+
+  const renderItem = ({ item }) => (
+    <View style={styles.item}>
+      <Image source={{ uri: item.photoUrl }} style={styles.photo} />
+      <View style={styles.itemInfo}>
+        <Text style={styles.itemName}>{item.name}</Text>
+        <Text style={styles.itemCity}>{item.city}</Text>
+        <Text style={styles.itemRecycledItems}>{item.recycledItems} items recycled</Text>
+      </View>
+    </View>
+  );
+
+
+  const styles = StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: theme === 'dark' ? '#042222' : '#C4D8BF',
+      padding: 16,
+      justifyContent: 'center', 
+      alignItems: 'center',
+    },
+    title_coming: {
+      color: theme === 'dark' ? '#C4D8BF' : '#042222',
+    },
+    // content: {
+    //   width: '90%',
+    //   height: '95%',
+    //   alignSelf: 'center',
+    // },
+    // title: {
+    //   fontSize: 20,
+    //   fontWeight: 'bold',
+    //   textAlign: 'Left',
+    //   paddingLeft: 25,
+    //   marginVertical: 20,
+    //   fontFamily: 'Nunito-Bold',
+    //   color: theme === 'dark' ? '#C4D8BF': '#2D5A3D'
+    // },
+    // listContainer: {
+    //   paddingBottom: 16,
+    //   paddingRight: 20,
+    //   paddingLeft: 20,
+    // },
+    // item: {
+    //   flexDirection: 'row',
+    //   alignItems: 'center',
+    //   padding: 10,
+    //   borderBottomWidth: 1,
+    //   borderBottomColor: theme === 'dark' ? '#e5f0e260'  : '#82B37A', // Border color
+    // },
+    // photo: {
+    //   width: 50,
+    //   height: 50,
+    //   borderRadius: 25,
+    //   marginRight: 10,
+    // },
+    // itemInfo: {
+    //   flex: 1,
+    //   alignItems: 'flex-end', // Align items to the right
+    // },
+    // itemName: {
+    //   fontSize: 18,
+    //   fontfamily: 'Nunito-SemiBold',
+    //   color: theme === 'dark' ? '#C4D8BF': '#2D5A3D'
+    // },
+    // itemCity: {
+    //   fontSize: 14,
+    //   color: theme === 'dark' ? '#C4D8BF': '#2D5A3D'
+    // },
+    // itemRecycledItems: {
+    //   fontSize: 14,
+    //   color: theme === 'dark' ? '#C4D8BF': '#2D5A3D'
+    // },
+  });
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.content}>
+        {/* <Text style={styles.title}>Green Machines</Text>
+        {loading ? (
+          <ActivityIndicator size="large" color="#0000ff" />
+        ) : (
+          <FlatList
+            data={data}
+            renderItem={renderItem}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={styles.listContainer}
+          />
+        )} */}
+      </View>
+      <Text style={styles.title_coming}>
+        Coming Soon!
+      </Text>
+    </SafeAreaView>
+  );
+}
+
+
+
+
+// --- C:\Users\S\Desktop\assignments-master\WasteWise-main\WasteWise-main\src\components\pie-chart.js ---
+
+import React, { useContext } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
+import PieChart from 'react-native-pie-chart';
+import { useRoute } from '@react-navigation/native';
+import ThemeContext from '../context/ThemeContext';
+
+
+const TestChart = ({counts, plastic, metal, ewaste}) => {
+  const { theme } = useContext(ThemeContext);
+  const numberOfItems = counts;
+
+  const widthAndHeight = 250;
+  const plastic1 = plastic / numberOfItems;
+  const metal1 = metal / numberOfItems;
+  const ewaste1 = ewaste / numberOfItems;
+  // const { plastic, metal, ewaste } = counts;
+  const series = [plastic1, metal1, ewaste1];
+  const sliceColor = ['#99DAB3', '#2D5A3D', '#FFFFFF'];
+
+  const styles = StyleSheet.create({
+    container: {
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    title: {
+      fontSize: 18,
+      marginVertical: 30,
+      color: theme === 'dark' ? '#F8F8F8' : '#2D5A3D',
+    },
+    noDataText: {
+      fontSize: 16,
+      color: theme === 'dark' ? '#F8F8F8' : '#2D5A3D',
+    },
+  });
+
+  const totalItems = series.reduce((a, b) => a + b, 0);
+
+  return (
+    <View style={styles.container}>
+      <Text style={styles.title}>You've recycled:</Text>
+      {totalItems > 0 ? (
+        <PieChart
+          widthAndHeight={widthAndHeight}
+          series={series}
+          sliceColor={sliceColor}
+          coverRadius={0.6}
+          coverFill={theme === 'dark' ? '#042222' : '#C4D8BF'}
+        />
+      ) : (
+        <Text style={styles.noDataText}>No items recycled yet.</Text>
+      )}
+    </View>
+  );
+};
+
+export default TestChart;
+
+
+// --- C:\Users\S\Desktop\assignments-master\WasteWise-main\WasteWise-main\src\components\profileHeader.js ---
+
+import React, { useContext, useState } from 'react';
+import { View, Text, Image, StyleSheet, Dimensions, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
+import ThemeContext from '../context/ThemeContext';
+import { AntDesign } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
+import { FIREBASE_AUTH, FIREBASE_STORAGE, FIRESTORE_DB } from '../../firebaseConfig';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { updateDoc, doc } from 'firebase/firestore';
+
+/**
+ * SCALING STUFF
+ */
+const { height, width } = Dimensions.get('window');
+const HEADER_HEIGHT = height * 0.20;
+
+const ProfileHeader = ({ profileImage, username, bio, navigation, onUpdateProfileImage }) => {
+  const { theme } = useContext(ThemeContext);
+  const [uploading, setUploading] = useState(false);
+
+  const requestPermission = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission Denied', 'We need permission to access your photo library.');
+    }
+    return status === 'granted';
+  };
+
+  const pickImage = async () => {
+    const hasPermission = await requestPermission();
+    if (!hasPermission) return;
+
+    try {
+      let result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 1,
+      });
+
+      console.log('ImagePicker Result:', result);
+
+      if (!result.cancelled && result.assets && result.assets.length > 0) {
+        const uri = result.assets[0].uri;
+        console.log('Selected Image URI:', uri);
+        if (!uri) {
+          throw new Error('Image URI is undefined');
+        }
+        await uploadImage(uri);
+      } else {
+        console.log('Image picking was cancelled.');
+      }
+    } catch (error) {
+      console.error('Error during image picking:', error);
+    }
+  };
+
+  const uploadImage = async (uri) => {
+    setUploading(true);
+    try {
+      console.log('Uploading image from URI:', uri);
+
+      // Ensure the URI is accessible
+      if (!uri) {
+        throw new Error('Invalid URI');
+      }
+
+      const response = await fetch(uri);
+      console.log('Fetch response:', response);
+
+      const blob = await response.blob();
+      console.log('Blob:', blob);
+
+      const user = FIREBASE_AUTH.currentUser;
+      console.log('Current user:', user);
+
+      if (!user) {
+        throw new Error('No user logged in');
+      }
+
+      const filename = `${user.uid}/profile.jpg`;
+      const storageRef = ref(FIREBASE_STORAGE, `profileimages/${filename}`);
+      console.log('Storage reference:', storageRef);
+
+      // Upload the image
+      await uploadBytes(storageRef, blob);
+      console.log('Image uploaded successfully to storage');
+
+      // Get the download URL
+      const downloadURL = await getDownloadURL(storageRef);
+      console.log('Download URL:', downloadURL);
+
+      // Update Firestore with the new profile image URL
+      const userDocRef = doc(FIRESTORE_DB, 'users', user.uid);
+      console.log('User document reference:', userDocRef);
+
+      await updateDoc(userDocRef, { profileImageLink: downloadURL });
+      console.log('Firestore document updated with profile image URL');
+
+      // Call the onUpdateProfileImage callback to update the profile image in the state
+      onUpdateProfileImage(downloadURL);
+
+      Alert.alert('Success', 'Profile image updated successfully');
+    } catch (error) {
+      console.error('Error during image upload:', error);
+      Alert.alert('Error', 'Could not update profile image');
+    } finally {
+      setUploading(false);
+      console.log('Uploading process finished');
+    }
+  };
+
+  const styles = StyleSheet.create({
+    headerContainer: {
+      height: HEADER_HEIGHT,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingTop: 40,
+      paddingLeft: 40,
+      backgroundColor: theme === 'dark' ? '#042222' : '#C4D8BF',
+      marginBottom: -20, // Negative margin to reduce space between header and next item
+    },
+    profileImage: {
+      width: HEADER_HEIGHT * 0.50, // Adjust the size to fit your design
+      height: HEADER_HEIGHT * 0.50,
+      borderRadius: (HEADER_HEIGHT * 0.6) / 2,
+      marginRight: 10,
+    },
+    textContainer: {
+      padding: 12,
+      flex: 1,
+    },
+    username: {
+      fontSize: 18,
+      fontWeight: 'bold',
+      color: theme === 'dark' ? '#C4D8BF' : '#2D5A3D',
+    },
+    bio: {
+      fontSize: 14,
+      paddingTop: 8,
+      color: theme === 'dark' ? '#C4D8BF' : '#2D5A3D',
+    },
+    logoutButton: {
+      position: 'absolute',
+      top: 50,
+      right: 20,
+      padding: 10,
+      borderRadius: 5,
+    },
+  });
+
+  return (
+    <View style={styles.headerContainer}>
+      <TouchableOpacity onPress={pickImage} disabled={uploading}>
+        <View>
+          <Image source={{ uri: profileImage }} style={styles.profileImage} />
+          {uploading && (
+            <View style={[styles.profileImage, { position: 'absolute', justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)' }]}>
+              <ActivityIndicator size="large" color="#fff" />
+            </View>
+          )}
+        </View>
+      </TouchableOpacity>
+      <View style={styles.textContainer}>
+        <Text style={styles.username}>{username}</Text>
+        <Text style={styles.bio}>{bio}</Text>
+      </View>
+      <TouchableOpacity
+        style={styles.logoutButton}
+        onPress={() => FIREBASE_AUTH.signOut()}
+        underlayColor="#68A77C" // Color when pressed, doesn't work yet
+      >
+        <AntDesign name="logout" size={20} color={theme === 'dark' ? '#C4D8BF' : '#2D5A3D'} />
+      </TouchableOpacity>
+    </View>
+  );
+};
+
+export default ProfileHeader;
+
+
+// --- C:\Users\S\Desktop\assignments-master\WasteWise-main\WasteWise-main\src\components\profileNavigation.js ---
+
+import React from 'react';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+
+
+const ProfileNavigation = ({ state, descriptors, navigation }) => {
+  return (
+    <View style={styles.navContainer}>
+      {state.routes.map((route, index) => {
+        const { options } = descriptors[route.key];
+        const label = options.tabBarLabel !== undefined
+          ? options.tabBarLabel
+          : options.title !== undefined
+          ? options.title
+          : route.name;
+
+        const isFocused = state.index === index;
+
+        const onPress = () => {
+          const event = navigation.emit({
+            type: 'tabPress',
+            target: route.key,
+            canPreventDefault: true,
+          });
+
+          if (!isFocused && !event.defaultPrevented) {
+            navigation.navigate(route.name);
+          }
+        };
+
+        return (
+          <TouchableOpacity
+            key={route.key}
+            onPress={onPress}
+            style={[styles.navItem, isFocused ? styles.navItemFocused : null]}
+          >
+            <Text style={[styles.navText, isFocused ? styles.navTextFocused : null]}>
+              {label}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+};
+export default ProfileNavigation;
+
+
+// --- C:\Users\S\Desktop\assignments-master\WasteWise-main\WasteWise-main\src\components\scanHistory.js ---
+
+import React, { useEffect, useState, useContext, useCallback } from 'react';
+import { StyleSheet, Text, View, FlatList, ActivityIndicator, SafeAreaView, TouchableOpacity } from 'react-native';
+import ThemeContext from '../context/ThemeContext';
+import { getAuth } from 'firebase/auth';
+import { FIRESTORE_DB } from '../../firebaseConfig';
+import { collection, query, where, orderBy, limit, startAfter, getDocs, onSnapshot } from 'firebase/firestore';
+
+// Memoized Item Component
+const Item = React.memo(({ item, theme }) => (
+  <View style={styles.item}>
+    <Text style={[styles.itemName, { color: theme === 'dark' ? '#C4D8BF' : '#2D5A3D' }]}>{item.name}</Text>
+    <Text style={[styles.itemDate, { color: theme === 'dark' ? '#C4D8BF90' : '#2D5A3D90' }]}>{item.date}</Text>
+  </View>
+));
+
+const fetchHistoryData = async (lastDoc, setData, setLoading, setHasMore, setLastDoc, setMessage) => {
+  const auth = getAuth();
+  const user = auth.currentUser;
+
+  if (!user) {
+    setMessage('Please sign in to use this function.');
+    setLoading(false);
+    return;
+  }
+
+  const userUid = user.uid;
+  const pageSize = 12;
+
+  let itemsQuery = query(
+    collection(FIRESTORE_DB, 'scannedItems'),
+    where('userId', '==', userUid),
+    orderBy('timestamp', 'desc'),
+    limit(pageSize)
+  );
+
+  if (lastDoc) {
+    itemsQuery = query(
+      collection(FIRESTORE_DB, 'scannedItems'),
+      where('userId', '==', userUid),
+      orderBy('timestamp', 'desc'),
+      startAfter(lastDoc),
+      limit(pageSize)
+    );
+  }
+
+  try {
+    const querySnapshot = await getDocs(itemsQuery);
+    const newData = querySnapshot.docs.map(doc => {
+      const item = doc.data();
+      return {
+        id: doc.id,
+        name: item.name,
+        date: item.timestamp.toDate().toLocaleDateString(), // Format the timestamp
+      };
+    });
+
+    if (newData.length === 0) {
+      setHasMore(false);
+    }
+
+    setData(prevData => {
+      const mergedData = [...prevData, ...newData];
+      const uniqueData = mergedData.filter((item, index, self) => self.findIndex(i => i.id === item.id) === index);
+      return uniqueData;
+    });
+
+    const lastVisible = querySnapshot.docs[querySnapshot.docs.length - 1];
+    setLastDoc(lastVisible);
+  } catch (error) {
+    console.error('Error fetching history data:', error);
+    setMessage('Failed to fetch history data');
+  } finally {
+    setLoading(false);
+  }
+};
+
+const setupRealTimeListener = (setData, setMessage) => {
+  const auth = getAuth();
+  const user = auth.currentUser;
+
+  if (!user) {
+    setMessage('Please sign in to use this function.');
+    return;
+  }
+
+  const userUid = user.uid;
+  const itemsQuery = query(
+    collection(FIRESTORE_DB, 'scannedItems'),
+    where('userId', '==', userUid),
+    orderBy('timestamp', 'desc')
+  );
+
+  return onSnapshot(itemsQuery, (querySnapshot) => {
+    const newData = querySnapshot.docs.map(doc => {
+      const item = doc.data();
+      return {
+        id: doc.id,
+        name: item.name,
+        date: item.timestamp.toDate().toLocaleDateString(), // Format the timestamp
+      };
+    });
+
+    setData(prevData => {
+      const mergedData = [...newData, ...prevData];
+      const uniqueData = mergedData.filter((item, index, self) => self.findIndex(i => i.id === item.id) === index);
+      return uniqueData;
+    });
+  }, (error) => {
+    console.error('Error setting up real-time listener:', error);
+    setMessage('Failed to fetch real-time data');
+  });
+};
+
+export default function ScanHistory() {
+  const [data, setData] = useState([]);
+  const [lastDoc, setLastDoc] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const [message, setMessage] = useState('');
+  const { theme } = useContext(ThemeContext);
+
+  useEffect(() => {
+    setLoading(true);
+    const unsubscribe = setupRealTimeListener(setData, setMessage);
+    fetchHistoryData(null, setData, setLoading, setHasMore, setLastDoc, setMessage);
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
+  }, []);
+
+  const loadMoreData = () => {
+    if (loading || !hasMore) return;
+    setLoading(true);
+    fetchHistoryData(lastDoc, setData, setLoading, setHasMore, setLastDoc, setMessage);
+  };
+
+  const renderItem = useCallback(({ item }) => (
+    <Item item={item} theme={theme} />
+  ), [theme]);
+
+  const renderFooter = () => {
+    if (!loading) return null;
+    return <ActivityIndicator size="large" color="#9ee8a4" />;
+  };
+
+  return (
+    <SafeAreaView style={[styles.container, { backgroundColor: theme === 'dark' ? '#042222' : '#C4D8BF' }]}>
+      <View style={styles.content}>
+        <Text style={[styles.title, { color: theme === 'dark' ? '#C4D8BF' : '#2D5A3D' }]}>Scan History</Text>
+        {message ? (
+          <Text style={[styles.emptyMessage, { color: theme === 'dark' ? '#C4D8BF' : '#2D5A3D' }]}>{message}</Text>
+        ) : data.length === 0 && !loading ? (
+          <Text style={[styles.emptyMessage, { color: theme === 'dark' ? '#C4D8BF' : '#2D5A3D' }]}>Scan your first item!</Text>
+        ) : (
+          <>
+            <FlatList
+              data={data}
+              renderItem={renderItem}
+              keyExtractor={(item) => item.id}
+              contentContainerStyle={styles.listContainer}
+              initialNumToRender={10} // Render a small number of items initially
+              getItemLayout={(data, index) => (
+                { length: 70, offset: 70 * index, index }
+              )} // Assumes each item has a fixed height of 70
+            />
+            {hasMore && !loading && (
+              <TouchableOpacity style={styles.loadMoreButton} onPress={loadMoreData}>
+                <Text style={[styles.loadMoreButtonText, { color: theme === 'dark' ? '#C4D8BF90' : '#274d2990' }]}>Load More</Text>
+              </TouchableOpacity>
+            )}
+          </>
+        )}
+        {renderFooter()}
+      </View>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    padding: 16,
+  },
+  content: {
+    width: '87%',
+    alignSelf: 'center',
+    height: '93%',
+  },
+  title: {
+    paddingTop: 20,
+    fontSize: 20,
+    fontFamily: 'Nunito-Bold',
+    textAlign: 'left',
+    marginVertical: 20,
+    paddingLeft: 25,
+  },
+  listContainer: {
+    paddingBottom: 15,
+    paddingRight: 20,
+    paddingLeft: 20,
+  },
+  item: {
+    fontFamily: 'Nunito-Regular',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    padding: 10,
+  },
+  itemName: {
+    flex: 1,
+    textAlign: 'left',
+    fontSize: 15,
+  },
+  itemDate: {
+    flex: 1,
+    textAlign: 'right',
+    fontSize: 15,
+  },
+  emptyMessage: {
+    fontSize: 18,
+    textAlign: 'center',
+    marginTop: 20,
+  },
+  loadMoreButton: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadMoreButtonText: {
+    fontSize: 16,
+  },
+});
+
+
+// --- C:\Users\S\Desktop\assignments-master\WasteWise-main\WasteWise-main\src\components\ScanModal.js ---
+
+import React, { useContext } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Modal, TouchableWithoutFeedback } from 'react-native';
+import ThemeContext from '../context/ThemeContext';
+
+export default function ScanModal({ visible, onClose, productInfo, isRecyclable, onNavigate }) {
+  const { theme } = useContext(ThemeContext);
+
+  const styles = StyleSheet.create({
+    modalContainer: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    },
+    modalContent: {
+      width: '80%',
+      backgroundColor: theme === 'dark' ? '#042222' : '#C4D8BF',
+      padding: 20,
+      borderRadius: 10,
+      alignItems: 'center',
+      position: 'relative',
+    },
+    headerSection: {
+      fontFamily: 'Nunito-Bold',
+      fontSize: 20,
+      marginBottom: 8,
+      color: theme === 'dark' ? '#C4D8BF' : '#2D5A3D',
+      textAlign: 'left',
+    },
+    paragraph: {
+      fontFamily: 'Nunito-Regular',
+      fontSize: 16,
+      marginBottom: 8,
+      textAlign: 'left',
+      color: theme === 'dark' ? '#C4D8BF' : '#2D5A3D',
+    },
+    button: {
+      marginTop: 20,
+      paddingVertical: 10,
+      paddingHorizontal: 20,
+      borderWidth: 2,
+      borderColor: theme === 'dark' ? '#C4D8BF' : '#2D5A3D',
+      width: '65%',
+      alignSelf: 'center',
+    },
+    buttonText: {
+      fontSize: 16,
+      color: theme === 'dark' ? '#C4D8BF' : '#2D5A3D',
+      textAlign: 'center',
+    },
+  });
+
+  return (
+    <Modal
+      animationType="slide"
+      transparent={true}
+      visible={visible}
+      onRequestClose={onClose}
+    >
+      <TouchableWithoutFeedback onPress={onNavigate}>
+        <View style={styles.modalContainer}>
+          <TouchableWithoutFeedback onPress={() => {}}>
+            <View style={styles.modalContent}>
+              <Text style={styles.headerSection}>Product Information</Text>
+              <Text style={styles.paragraph}>Product: {productInfo}</Text>
+              <Text style={styles.paragraph}>Recyclable: {isRecyclable ? 'Yes' : 'No'}</Text>
+              <TouchableOpacity style={styles.button} onPress={onNavigate}>
+                <Text style={styles.buttonText}>Navigate</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableWithoutFeedback>
+        </View>
+      </TouchableWithoutFeedback>
+    </Modal>
+  );
+}
+
+
+// --- C:\Users\S\Desktop\assignments-master\WasteWise-main\WasteWise-main\src\components\settingsPage.js ---
+
+import React, { useContext, useState, useEffect } from 'react';
+import { StyleSheet, Text, View, Switch, ScrollView, SafeAreaView, TouchableOpacity } from 'react-native';
+import Icon from 'react-native-vector-icons/FontAwesome';
+import ThemeContext from '../context/ThemeContext';
+
+
+export default function Settings({ navigation }) {
+  const { theme, toggleTheme } = useContext(ThemeContext);
+  
+  const [isDarkModeEnabled, setIsDarkModeEnabled] = useState(theme === 'dark');
+  const [isDataEnabled, setIsDataEnabled] = useState(false);
+  const [isAccountPublic, setIsAccountPublic] = useState(false);
+
+  useEffect(() => {
+    setIsDarkModeEnabled(theme === 'dark');
+  }, [theme]);
+
+  const handleToggleTheme = () => {
+    const newTheme = theme === 'light' ? 'dark' : 'light';
+    toggleTheme(newTheme);
+  };
+
+  const toggleDataSwitch = () => setIsDataEnabled(previousState => !previousState);
+
+  const publicAccountSwitch = () => setIsAccountPublic(previousState => !previousState);
+
+  const styles = StyleSheet.create({
+    safeArea: {
+      flex: 1,
+      backgroundColor: theme === 'dark' ? '#042222' : '#C4D8BF',
+    },
+    scrollViewContent: {
+      padding: 16,
+      width: '90%',
+      alignSelf: 'center',
+    },
+    title: {
+      fontSize: 12,
+      color: theme === 'dark' ? '#C4D8BF70' : '#2D5A3D',
+      marginLeft: 18,
+      marginRight: 18,
+      marginTop: 10,
+      marginBottom: 10,
+      borderBottomWidth: 1,
+      borderBottomColor: theme === 'dark' ? '#C4D8BF70' : '#2D5A3D',
+    },
+    body_container: {
+      flex: 1,
+      marginLeft: 20,
+      marginRight: 20,
+    },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginTop: 20,
+      paddingVertical: 2,
+    },
+    text: {
+      fontSize: 16,
+      color: theme === 'dark' ? '#C4D8BF' : '#2D5A3D',
+      fontFamily: 'Nunito-Medium',
+    },
+    icon: {
+      marginLeft: 'auto',
+    },
+    switch: {
+      marginLeft: 'auto',
+    },
+    section: {
+      marginTop: 40,
+      marginBottom: 10,
+      borderBottomWidth: 1,
+      borderBottomColor: theme === 'dark' ? '#C4D8BF70' : '#2D5A3D',
+    },
+    sectionTitle: {
+      fontSize: 12,
+      color: theme === 'dark' ? '#C4D8BF70' : '#2D5A3D',
+    },
+  }); 
+
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      <ScrollView contentContainerStyle={styles.scrollViewContent}>
+        <Text style={styles.title}>Account Settings</Text>
+        <View style={styles.body_container}>
+          <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('UserSettings')}>
+            <Text style={styles.text}>Edit Profile</Text>
+            <Icon name="chevron-right" size={20} color={theme === 'dark' ? '#C4D8BF' : '#2D5A3D'} style={styles.icon} />
+          </TouchableOpacity>
+          <View style={styles.row}>
+            <Text style={styles.text}>Dark Mode</Text>
+            <Switch
+              trackColor={{ false: '#767577', true: '#2D593D' }}
+              thumbColor={isDarkModeEnabled ? '#99DAB3' : '#f4f3f4'}
+              ios_backgroundColor="#3e3e3e"
+              onValueChange={handleToggleTheme}
+              value={isDarkModeEnabled}
+              style={styles.switch}
+            />
+          </View>
+          <View style={styles.row}>
+            <Text style={styles.text}>Data Collection</Text>
+            <Switch
+              trackColor={{ false: '#767577', true: '#2D593D' }}
+              thumbColor={isDarkModeEnabled ? '#99DAB3' : '#f4f3f4'}
+              ios_backgroundColor="#3e3e3e"
+              onValueChange={toggleDataSwitch}
+              value={isDataEnabled}
+              style={styles.switch}
+            />
+          </View>
+          <View style={styles.row}>
+            <Text style={styles.text}>Make My Account Public</Text>
+            <Switch
+              trackColor={{ false: '#767577', true: '#2D593D' }}
+              thumbColor={isDarkModeEnabled ? '#99DAB3' : '#f4f3f4'}
+              ios_backgroundColor="#3e3e3e"
+              onValueChange={publicAccountSwitch}
+              value={isAccountPublic}
+              style={styles.switch}
+            />
+          </View>
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>More</Text>
+          </View>
+          <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('AboutUs')}>
+            <Text style={styles.text}>About Us</Text>
+            <Icon name="chevron-right" size={20} color={theme === 'dark' ? '#C4D8BF' : '#2D5A3D'} style={styles.icon} />
+          </TouchableOpacity>
+          <View style={styles.row}>
+            <Text style={styles.text}>Privacy Policy</Text>
+            <Icon name="chevron-right" size={20} color={theme === 'dark' ? '#C4D8BF' : '#2D5A3D'} style={styles.icon} />
+          </View> 
+          <View style={styles.row}>
+            <Text style={styles.text}>Terms and Conditions</Text>
+            <Icon name="chevron-right" size={20} color={theme === 'dark' ? '#C4D8BF' : '#2D5A3D'} style={styles.icon} />
+          </View>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+
+// --- C:\Users\S\Desktop\assignments-master\WasteWise-main\WasteWise-main\src\components\social.js ---
+
+import React, { useEffect, useState, useContext } from 'react';
+import { StyleSheet, Text, View, FlatList, Image, SafeAreaView, ActivityIndicator } from 'react-native';
+import ThemeContext from '../context/ThemeContext';
+
+// Mock data fetching function
+const fetchRecyclingData = async (page) => {
+  // Replace this with your actual data fetching logic
+  const items = [
+    'Recycled Dasani water bottle',
+    'Recycled batteries',
+    'Recycled wheels',
+    'is looking to recycle:\nbatteries\nwheels',
+  ];
+
+  const date = new Date();
+  return new Array(10).fill(null).map((_, index) => ({
+    id: `${page}-${index}`,
+    user: index % 2 === 0 ? 'You' : 'Hermione',
+    profilePic: index % 2 === 0
+      ? 'https://i.pinimg.com/564x/1b/2d/d6/1b2dd6610bb3570191685dcfb3e5e68e.jpg'
+      : 'https://i.pinimg.com/564x/2a/97/f1/2a97f1ce022557060bec269248a7c274.jpg',
+    item: items[index % items.length],
+    time: `${date.getHours()}:${date.getMinutes()}`,
+    date: new Date(date.setDate(date.getDate() - Math.floor(index / 3))).toLocaleDateString(), // Different date every 3 messages
+  }));
+};
+
+export default function CommunityRecords() {
+  const [data, setData] = useState([]);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const { theme } = useContext(ThemeContext);
+
+
+
+  const loadMoreData = async () => {
+    if (loading) return;
+    setLoading(true);
+    const newData = await fetchRecyclingData(page);
+    setData([...newData, ...data]);
+    setPage(page + 1);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    loadMoreData();
+  }, []);
+
+  const renderItem = ({ item }) => {
+    const isCurrentUser = item.user === 'You';
+    return (
+      <View style={[styles.itemContainer, isCurrentUser ? styles.currentUserContainer : styles.friendContainer]}>
+        {!isCurrentUser && <Image source={{ uri: item.profilePic }} style={styles.profilePic} />}
+        <View style={isCurrentUser ? styles.currentUserTextContainer : styles.friendTextContainer}>
+          <Text style={styles.userName}>{item.user}</Text>
+          <View style={isCurrentUser ? styles.currentUserChatBubble : styles.friendChatBubble}>
+            <Text style={isCurrentUser ? styles.currentUserItemText : styles.friendItemText}>
+              {item.item.split(' ')[0]} <Text style={isCurrentUser ? styles.currentUserItemTextHighlight : styles.friendItemTextHighlight}>{item.item.split(' ').slice(1).join(' ')}</Text>
+            </Text>
+          </View>
+          <Text style={styles.timeText}>{item.time}</Text>
+        </View>
+        {isCurrentUser && <Image source={{ uri: item.profilePic }} style={styles.profilePic} />}
+      </View>
+    );
+  };
+
+  const renderDateSeparator = (date) => (
+    <View style={styles.dateSeparator}>
+      <View style={styles.separatorLine} />
+      <Text style={styles.dateSeparatorText}>{date}</Text>
+      <View style={styles.separatorLine} />
+    </View>
+  );
+
+  const renderListItem = ({ item, index }) => {
+    const previousItem = data[index + 1]; // Inverted list, so the previous item is the next one in the array
+    const isNewDay = !previousItem || previousItem.date !== item.date;
+    const showDateSeparator = index % 3 === 0 || isNewDay; // Show date separator every 3 messages or on a new day
+    return (
+      <>
+        {showDateSeparator && renderDateSeparator(item.date)}
+        {renderItem({ item })}
+      </>
+    );
+  };
+
+  const styles = StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: theme === 'dark' ? '#042222' : '#C4D8BF',
+      padding: 16,
+      justifyContent: 'center', 
+      alignItems: 'center',
+    },
+    title: {
+      color: theme === 'dark' ? '#C4D8BF' : '#042222',
+    },
+    // listContainer: {
+    //   paddingBottom: 16,
+    // },
+    // itemContainer: {
+    //   flexDirection: 'row',
+    //   marginVertical: 10,
+    //   width: '90%',
+    //   alignItems: 'flex-end',
+    //   alignSelf: 'center', // Center the container itself
+    //   justifyContent: 'flex-end', // Center the content within the container
+    // },
+    // currentUserContainer: {
+    //   justifyContent: 'flex-end',
+    //   alignItems: 'flex-end', // Align all items to the right
+    // },
+    // friendContainer: {
+    //   flexDirection: 'row', // Ensure profile pic is on the left
+    //   justifyContent: 'flex-start',
+    // },
+    // profilePic: {
+    //   width: 50,
+    //   height: 50,
+    //   borderRadius: 25,
+    //   marginHorizontal: 10,
+    // },
+    // textContainer: {
+    //   maxWidth: '80%',
+    // },
+    // currentUserTextContainer: {
+    //   alignItems: 'flex-end',
+    //   marginLeft: 'auto', // Push the current user's text container to the right
+    // },
+    // friendTextContainer: {
+    //   alignItems: 'flex-start',
+    // },
+    // currentUserChatBubble: {
+    //   backgroundColor: theme === 'dark' ? '#03624C' : '#2D5A3D', 
+    //   padding: 10,
+    //   borderBottomLeftRadius: 15,
+    //   borderTopRightRadius: 15,
+    //   borderTopLeftRadius: 15,
+    // },
+    // friendChatBubble: {
+    //   backgroundColor: theme === 'dark' ? '#C2D9BF' : '#FFFFFF',
+    //   padding: 10,
+    //   borderTopLeftRadius: 15,
+    //   borderTopRightRadius: 15,
+    //   borderBottomRightRadius: 15,
+    // },
+    // currentUserItemText: {
+    //   color: '#FFFFFF', // Text color for current user
+    // },
+    // friendItemText: {
+      
+    //   color: theme === 'dark' ? 'black' : '#68A77C',
+    // },
+    // currentUserItemTextHighlight: {
+    //   color: theme === 'dark' ? '#99DAB3' : '#C4D8BF', // Highlight color for current user
+    // },
+    // friendItemTextHighlight: {
+    //   color: theme === 'dark' ? '#03624C' : '#000000', // Text color for friend
+    // },
+    // timeText: {
+    //   fontSize: 12,
+    //   color: theme === 'dark' ? '#C4D8BF95' : '#2D5A3D',
+    //   marginTop: 5, // Add margin to separate from chat bubble
+    // },
+    // userName: {
+    //   fontSize: 14,
+    //   color: theme === 'dark' ? '#C4D8BF95' : '#2D5A3D',
+    //   marginBottom: 5, // Add margin to separate from chat bubble
+    // },
+    // dateSeparator: {
+    //   flexDirection: 'row',
+    //   alignItems: 'center',
+    //   marginVertical: 20,
+
+
+    // },
+    // separatorLine: {
+    //   flex: 1,
+    //   height: 1,
+    //   backgroundColor: theme === 'dark' ? '#e5f0e260'  : '#82B37A',
+    // },
+    // dateSeparatorText: {
+    //   marginHorizontal: 10,
+    //   color: theme === 'dark' ? '#e5f0e260'  : '#82B37A',
+    // },
+  });
+
+  return (
+    <SafeAreaView style={styles.container}>
+      {/* <FlatList
+        data={data}
+        renderItem={renderListItem}
+        keyExtractor={(item) => item.id}
+        onEndReached={loadMoreData}
+        onEndReachedThreshold={0.5}
+        ListFooterComponent={loading && <ActivityIndicator size="large" color="#0000ff" />}
+        contentContainerStyle={styles.listContainer}
+        inverted // To show new entries at the top
+      /> */}
+      <Text style={styles.title}>
+        Coming Soon!
+      </Text>
+    </SafeAreaView>
+  );
+}
+
+
+
+
+// --- C:\Users\S\Desktop\assignments-master\WasteWise-main\WasteWise-main\src\components\startScreenSlide.js ---
+
+import React, { useRef, useState, useContext } from 'react';
+import { View, Image, Dimensions, StyleSheet, TouchableOpacity } from 'react-native';
+import communityImageLight from '../../assets/graphics/light-mode/community.png'; // Correct import path
+import communityImageDark from '../../assets/graphics/dark-mode/community.png';
+import circularLight from '../../assets/graphics/light-mode/graphics1.png';
+import circularDark from '../../assets/graphics/dark-mode/graphics1.2.png';
+import sloganLight from '../../assets/graphics/light-mode/graphics2.png';
+import sloganDark from '../../assets/graphics/dark-mode/graphics2.2.png';
+import ThemeContext from '../context/ThemeContext';
+import PagerView from 'react-native-pager-view';
+
+const { width } = Dimensions.get('window');
+const { height } = Dimensions.get('window');
+
+const Slideshow = () => {
+    const { theme } = useContext(ThemeContext);
+
+    const images = theme === 'dark'
+        ? [communityImageDark, circularDark, sloganDark]
+        : [communityImageLight, circularLight, sloganLight];
+
+    const [activeIndex, setActiveIndex] = useState(0);
+
+    const handlePageSelected = (event) => {
+        setActiveIndex(event.nativeEvent.position);
+    };
+
+    const scrollToIndex = (index) => {
+        setActiveIndex(index);
+    };
+
+    return (
+        <View style={styles.wrapper}>
+            <View style={styles.container}>
+                <PagerView
+                    style={styles.scrollViewContainer}
+                    initialPage={0}
+                    onPageSelected={handlePageSelected}
+                >
+                    {images.map((image, index) => (
+                        <View style={styles.page} key={index}>
+                            <Image source={typeof image === 'string' ? { uri: image } : image} style={styles.image} />
+                        </View>
+                    ))}
+                </PagerView>
+            </View>
+            <View style={styles.pagination}>
+                {images.map((_, index) => (
+                    <TouchableOpacity key={index} onPress={() => scrollToIndex(index)}>
+                        <View style={[styles.dot, activeIndex === index ? styles.activeDot : styles.inactiveDot]} />
+                    </TouchableOpacity>
+                ))}
+            </View>
+        </View>
+    );
+};
+
+const styles = StyleSheet.create({
+    wrapper: {
+        alignItems: 'center',
+    },
+    container: {
+        width: width * 0.75,
+        height: height * 0.55, // Adjust the height as needed
+        alignSelf: 'center', // Center the container horizontally
+    },
+    scrollViewContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    image: {
+        width: width * 0.75,
+        height: height * 0.55,
+        resizeMode: 'cover',
+    },
+    pagination: {
+        flexDirection: 'row',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginTop: 10, // Add some margin to create space between the slider and the dots
+    },
+    dot: {
+        width: 10,
+        height: 10,
+        borderRadius: 5,
+        marginHorizontal: 5,
+    },
+    activeDot: {
+        backgroundColor: 'rgba(255, 255, 255, 0.92)',
+    },
+    inactiveDot: {
+        backgroundColor: 'rgba(255, 255, 255, 0.4)',
+    },
+    page: {
+        justifyContent: 'center',
+        alignItems: 'center',
+    }
+});
+
+export default Slideshow;
+
+
+// --- C:\Users\S\Desktop\assignments-master\WasteWise-main\WasteWise-main\src\context\ThemeContext.js ---
+
+import React, { createContext, useState, useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const ThemeContext = createContext();
+
+export const ThemeProvider = ({ children }) => {
+  const [theme, setTheme] = useState('light');
+
+  useEffect(() => {
+    const getTheme = async () => {
+      try {
+        const savedTheme = await AsyncStorage.getItem('theme');
+        if (savedTheme) {
+          setTheme(savedTheme);
+        }
+      } catch (error) {
+        console.log('Error loading theme:', error);
+      }
+    };
+    getTheme();
+  }, []);
+
+  const toggleTheme = async (newTheme) => {
+    setTheme(newTheme);
+    try {
+      await AsyncStorage.setItem('theme', newTheme);
+    } catch (error) {
+      console.log('Error saving theme:', error);
+    }
+  };
+
+  return (
+    <ThemeContext.Provider value={{ theme, toggleTheme }}>
+      {children}
+    </ThemeContext.Provider>
+  );
+};
+
+export default ThemeContext;
+
+
+// --- C:\Users\S\Desktop\assignments-master\WasteWise-main\WasteWise-main\src\screens\AboutUs.js ---
+
+import React, { useState, useContext } from 'react';
+import { Image, View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, SafeAreaView, Modal } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import ThemeContext from '../context/ThemeContext';
+import Terence from '../../assets/terence.png';
+import William from '../../assets/william.jpg';
+import My from '../../assets/miku.jpg';
+import { ScrollView } from 'react-native';
+
+const recyclingData = [
+  {
+      image: Terence,
+      description: 'Terence Chen :D',
+      school: 'Harvey Mudd College',
+      major: 'Computer Science',
+  },  
+  {
+    image: William,
+    description: 'William Koh',
+    school: 'Harvey Mudd College',
+    major: 'Computer Science',
+  },       
+  {
+    image: My,
+    description: 'My Nguyen',
+    school: 'Harvey Mudd College',
+    major: 'Computer Science + Psychology',
+  },
+  // Add more recycling symbols and their descriptions here
+];
+
+export default function UserSettings({ onUpdateBio }) {
+  const { theme, toggleTheme } = useContext(ThemeContext);
+  const [bio, setBio] = useState('');
+  const [password, setPassword] = useState('');
+  const [modalVisible, setModalVisible] = useState(false);
+  const navigation = useNavigation();
+
+  const handleBackPress = () => {
+    navigation.goBack(); // Navigate back to the previous screen
+  };
+
+  const styles = StyleSheet.create({
+    container: {
+      flex: 1,
+      padding: 16,
+      backgroundColor: theme === 'dark' ? '#042222' : '#C4D8BF',
+    },
+    backButton: {
+      paddingLeft:16,
+      width: 80,
+      height: 50,
+      justifyContent: 'center',
+      alignItems: 'center',
+      marginVertical: 10,
+    },
+    backButtonText: {
+      color: theme === 'dark' ? '#9FBCA5' : '#2D5A3D',
+      fontSize: 18,
+    },
+    safeArea: {
+      flex: 1,
+      backgroundColor: theme === 'dark' ? '#042222' : '#C4D8BF',
+  },
+  container: {
+      flex: 1,
+      padding: 20,
+
+      backgroundColor: theme === 'dark' ? '#042222' : '#C4D8BF',
+  },
+  title: {
+      fontSize: 24,
+      fontWeight: 'bold',
+      marginBottom: 20,
+      textAlign: 'center',
+      color: theme === 'dark' ? '#C4D8BF' : '#2D5A3D',
+      fontFamily: 'Nunito-Bold',
+      fontWeight: 'bold',
+  },
+  card: {
+      flexDirection: "row",
+      backgroundColor: theme === 'dark' ? '#9FBCA5' : '#f5fff0',
+      borderRadius: 10,
+      padding: 15,
+      marginBottom: 20,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.1,
+      shadowRadius: 5,
+  },
+  symbolImage: {
+      width: 100,
+      height: 100,
+      resizeMode: 'contain',
+      alignSelf: 'center',
+  },
+  description: {
+      fontSize: 16,
+      color: '#2D5A3D',
+      marginVertical: 3,
+      textAlign: 'center',
+      fontFamily: 'Nunito-Regular',
+  },
+  productsTitle: {
+      fontSize: 17,
+      fontFamily: 'Nunito-Medium',
+      marginTop: 10,
+      color: '#2D5A3D',
+  },
+  productItem: {
+      fontSize: 16,
+      fontFamily: 'Nunito-Regular',
+      color: '#2D5A3D',
+      marginVertical: 2,
+  },
+  textContainer: {
+    flex: 1,
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    paddingLeft: 10
+  },
+  nameText: {
+    fontSize: 18,
+    color: '#2D5A3D',
+    marginVertical: 3,
+    textAlign: 'center',
+    fontFamily: 'Nunito-Bold',
+  },
+  jessicaFont: {
+    textAlign:'center', 
+    color: theme === 'dark' ? '#C4D8BF' : '#2D5A3D',
+    fontFamily: 'Nunito-Bold',
+  },
+  });
+
+  
+
+  return (
+    <SafeAreaView style={styles.container}>
+    <TouchableOpacity style={styles.backButton} onPress={handleBackPress}>
+      <Text style={styles.backButtonText}>Back</Text>
+    </TouchableOpacity>
+    <ScrollView contentContainerStyle={{ paddingHorizontal: 16 }}>
+      <Text style={styles.title}>Wastewise Team</Text>
+      
+      {recyclingData.map((item, index) => (
+        <View key={index} style={styles.card}>
+          <Image source={item.image} style={styles.symbolImage} />
+          <View style={styles.textContainer}>
+            <Text style={styles.nameText}>{item.description}</Text>
+            <Text style={styles.description}>{item.school}</Text>
+            <Text style={styles.description}>{item.major}</Text>
+          </View>
+        </View>
+      ))}
+      <Text style={styles.jessicaFont}>Honorary member: Jessica Huang</Text>
+    </ScrollView>
+  </SafeAreaView>
+    
+  );
+}
+
+
+// --- C:\Users\S\Desktop\assignments-master\WasteWise-main\WasteWise-main\src\screens\BinMapScreen.js ---
+
+import React from 'react';
+import { View, Text, StyleSheet } from 'react-native';
+
+export default function BinMapScreen({ navigation }) {
+    return (
+        <View style={styles.container}>
+            <Text 
+                onPress={() => navigation.navigate('Home')}
+                style={styles.text}
+            >
+                Bin Screen
+            </Text>
+        </View>
+    );
+}
+
+// Edit style stuff here
+const styles = StyleSheet.create({
+    container: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    text: {
+        fontSize: 26,
+        fontWeight: 'bold',
+    },
+});
+
+
+
+// --- C:\Users\S\Desktop\assignments-master\WasteWise-main\WasteWise-main\src\screens\cameraScreen.js ---
+
+import React, { useState, useEffect } from "react";
+import { Text, View, StyleSheet, TouchableOpacity, ActivityIndicator, Button } from "react-native";
+import { CameraView, Camera } from "expo-camera";
+import { Entypo } from '@expo/vector-icons'; // Import Entypo icon
+import ScanModal from "../components/ScanModal";
+
+
+export default function CameraScreen({ navigation }) {
+  const [hasPermission, setHasPermission] = useState(null);
+  const [scanned, setScanned] = useState(false);
+  const [showScanAgainButton, setShowScanAgainButton] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [productInfo, setProductInfo] = useState('');
+  const [isRecyclable, setIsRecyclable] = useState(false);
+  
+
+  useEffect(() => {
+    const getCameraPermissions = async () => {
+      const { status } = await Camera.requestCameraPermissionsAsync();
+      setHasPermission(status === "granted");
+    };
+
+    
+
+    getCameraPermissions();
+  }, []);
+
+  const handleBarCodeScanned = async ({ type, data }) => {
+    if (!scanned) {
+      setScanned(true);
+      setLoading(true);
+      await fetchProductData(data); // Wait for the product data to be fetched
+      setLoading(false); // Disable loading indicator
+      setShowScanAgainButton(true); // Show the scan again button
+    }
+  };
+
+  const fetchProductData = async (barcode) => {
+    try {
+      const response = await fetch(`https://world.openfoodfacts.net/api/v2/product/${barcode}`);
+      const productData = await response.json();
+
+      if (productData.status === 1) {
+        console.log('Recyclability Section:', JSON.stringify(productData.product.packagings, null, 2)); // Print the recyclability section
+
+        const materials = extractMaterials(productData.product.packagings);
+        const recyclable = determineRecyclability(materials);
+        setProductInfo(productData.product.product_name);
+        setIsRecyclable(recyclable);
+        setModalVisible(true);
+      } else {
+        Alert.alert("Error", "Product data not found.", [
+          {
+            text: "OK", onPress: () => {
+              setScanned(false);
+              setLoading(false);
+            }
+          },
+        ]);
+      }
+    } catch (error) {
+      console.error("Error fetching product data:", error);
+      Alert.alert("Error", "Failed to handle barcode scan.", [
+        {
+          text: "OK", onPress: () => {
+            setScanned(false);
+            setLoading(false);
+          }
+        },
+      ]);
+    }
+  };
+
+  const extractMaterials = (packagings) => {
+    return packagings.map(packaging => packaging.material);
+  };
+
+  const determineRecyclability = (materials) => {
+    const recyclabilityRules = {
+      "pet": true,
+      "hdpe": true,
+      "glass": true,
+      "aluminium": true,
+      "steel": true,
+      "ps": false,
+      "pvc": false,
+      "recyclable": true,
+      "not recyclable": false,
+    };
+
+    for (const material of materials) {
+      if (material) {
+        const materialKey = Object.keys(recyclabilityRules).find(key => material.toLowerCase().includes(key));
+        if (materialKey && recyclabilityRules[materialKey] === false) {
+          return false;
+        }
+      }
+    }
+    return true;
+  };
+
+  if (hasPermission === null) {
+    return <Text>Requesting for camera permission</Text>;
+  }
+  if (hasPermission === false) {
+    return <Text>No access to camera</Text>;
+  }
+
+  return (
+    <View style={styles.container}>
+      {!showScanAgainButton && (
+        <CameraView
+          onBarcodeScanned={scanned ? undefined : handleBarCodeScanned}
+          barcodeScannerSettings={{
+            barcodeTypes: ["qr", "upc_e", "upc_a"],
+          }}
+          style={StyleSheet.absoluteFillObject}
+        />
+      )}
+
+      {/* Icon Button */}
+      <TouchableOpacity style={styles.iconButton} onPress={() => console.log("Upload image")}>
+        <View style={styles.iconContainer}>
+          <Entypo name="image" size={24} color="white" />
+        </View>
+      </TouchableOpacity>
+
+      {/* Loading Indicator */}
+      {loading && <ActivityIndicator size="large" color="#9ee8a4" />}
+
+      {/* Scan Modal */}
+      <ScanModal
+        visible={modalVisible}
+        onClose={() => {
+          setModalVisible(false);
+          setShowScanAgainButton(true);
+        }}
+        productInfo={productInfo}
+        isRecyclable={isRecyclable}
+        onNavigate={() => {
+          setModalVisible(false);
+          setShowScanAgainButton(true);
+          setLoading(false);
+          navigation.navigate('Map', {fromScanner: true});
+          
+        }}
+      />
+
+      {/* Scan Again Buttons */}
+      {showScanAgainButton && (
+        <View style={styles.centeredButtons}>
+          <Button
+            title={"Tap to Scan Again"}
+            onPress={() => {
+              setScanned(false);
+              setShowScanAgainButton(false);
+            }}
+          />
+          <Button
+            title={"Go Back"}
+            onPress={() => navigation.goBack()}
+          />
+        </View>
+      )}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    justifyContent: "center",
+  },
+  iconButton: {
+    position: 'absolute',
+    bottom: 20,
+    left: 20,
+    backgroundColor: 'transparent',
+    padding: 10,
+    borderRadius: 20,
+    elevation: 2, // Add elevation for shadow on Android
+  },
+  iconContainer: {
+    backgroundColor: 'black',
+    borderRadius: 50,
+    padding: 10,
+    opacity: .7
+  },
+  centeredButtons: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+});
+
+
+
+
+// --- C:\Users\S\Desktop\assignments-master\WasteWise-main\WasteWise-main\src\screens\CreateAccount.js ---
+
+import React, { useContext, useState } from 'react';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Dimensions, TouchableWithoutFeedback, Keyboard, SafeAreaView, ScrollView } from 'react-native';
+import { AntDesign } from '@expo/vector-icons';
+import ThemeContext from '../context/ThemeContext';
+import { FIREBASE_AUTH, FIRESTORE_DB } from '../../firebaseConfig';
+import { createUserWithEmailAndPassword } from 'firebase/auth';
+import { doc, setDoc, query, where, getDocs, collection } from 'firebase/firestore';
+
+function isValidPassword(password) {
+  // Regular expression to match the criteria
+  const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
+
+  // Check if the password matches the criteria
+  return passwordRegex.test(password);
+}
+
+// Example usage:
+const password = "MyPassword123";
+console.log(isValidPassword(password)); // Output: true
+
+
+const { width, height } = Dimensions.get('window');
+
+const CreateAccount = ({ navigation }) => {
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const { theme, toggleTheme } = useContext(ThemeContext);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [retypePassword, setRetypePassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [username, setUsername] = useState('');
+  const auth = FIREBASE_AUTH;
+
+  const checkUsernameExists = async (username) => {
+    const usersCollectionRef = collection(FIRESTORE_DB, 'users');
+    const q = query(usersCollectionRef, where('username', '==', username));
+    const querySnapshot = await getDocs(q);
+    return !querySnapshot.empty;
+  };
+  
+
+
+  const signUp = async () => {
+
+    if (!firstName || !lastName || !email || !password || !retypePassword || !username) {
+      alert('All fields are required!');
+      return;
+    }
+
+    if (/\s/.test(username)) {
+      alert('Username should not contain spaces!');
+      return;
+    }
+
+    const validLength = username.length >= 3 && username.length <= 15;
+
+    if (!validLength) {
+      alert('Username should be between 3 and 15 letters!');
+      return;
+    }
+
+    if (!isValidPassword(password)) {
+      alert('Password must be at least 8 characters long and contain at least one lowercase letter, one uppercase letter, and one digit. ');
+      return;
+    }
+
+    if (password !== retypePassword) {
+      alert('Passwords do not match!');
+      return;
+    }
+
+
+    try {
+      const usernameExists = await checkUsernameExists(username);
+      if (usernameExists) {
+        alert('Username already exists. Please choose another.');
+        return;
+      }
+
+
+      const response = await createUserWithEmailAndPassword(auth, email, password);
+      const uid = response.user.uid;
+
+      // Add user to Firestore
+      const userDocRef = doc(FIRESTORE_DB, 'users', uid);
+      await setDoc(userDocRef, {
+        firstName: firstName,
+        lastName: lastName,
+        username: username,
+        createdAt: new Date()
+      });
+
+      console.log(response);
+     
+
+      alert('Sign Up successful!')
+    } catch (error) {
+      console.log(error);
+      alert('Sign up failed!' + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const styles = StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: theme === 'dark' ? '#042222' : '#fff',
+      paddingHorizontal: 20,
+    },
+    headerContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginTop: height * 0.02, // Adjusted to 2% of screen height
+      position: 'relative', // Ensure relative positioning for absolute children
+    },
+    iconContainer: {
+      position: 'absolute',
+      left: 20,
+    },
+    headerText: {
+      fontSize: 24,
+      fontWeight: 'bold',
+      color: theme === 'dark' ? '#00DF82' : '#2D5A3D',
+    },
+    formContainer: {
+      alignItems: 'center',
+      marginTop: height * 0.05, // Further reduced from 10% to 5% of screen height
+    },
+    input: {
+      width: '80%', // Adjust width as needed
+      height: 50,
+      borderColor: '#ddd',
+      borderWidth: 1,
+      borderRadius: 5,
+      paddingHorizontal: 10,
+      marginVertical: 10,
+      backgroundColor: '#f5f5f5',
+    },
+    signUpButton: {
+      width: '80%', // Adjust width as needed
+      height: 50,
+      borderRadius: 5,
+      justifyContent: 'center',
+      alignItems: 'center',
+      backgroundColor: theme === 'dark' ? '#1AB385' : '#2D5A3D',
+      marginTop: 20,
+    },
+    signUpButtonText: {
+      color: '#fff',
+      fontSize: 18,
+    },
+    forgotPasswordButton: {
+      marginTop: 10,
+    },
+    forgotPasswordButtonText: {
+      color: theme === 'dark' ? '#1AB385' : '#2D5A3D',
+      fontSize: 16,
+    },
+    safeArea: {
+      flex: 1,
+      backgroundColor: theme === 'dark' ? '#042222' : '#fff',
+
+    },
+    scrollViewContainer: {
+      flexGrow: 1,
+    },
+  });
+
+
+
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      <ScrollView contentContainerStyle={styles.scrollViewContainer}>
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <View style={styles.container}>
+            <View style={styles.headerContainer}>
+              <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconContainer}>
+                <AntDesign name="close" size={24} color="gray" />
+              </TouchableOpacity>
+              <Text style={styles.headerText}>Sign Up</Text>
+            </View>
+
+            <View style={styles.formContainer}>
+              <TextInput value={firstName} style={styles.input} placeholder="First Name" placeholderTextColor="#666" onChangeText={(text) => setFirstName(text)} />
+              <TextInput value={lastName} style={styles.input} placeholder="Last Name" placeholderTextColor="#666" onChangeText={(text) => setLastName(text)} />
+              
+              <TextInput value={username} style={styles.input} placeholder="Username" placeholderTextColor="#666" onChangeText={(text) => setUsername(text)} />
+              
+              <TextInput value={email} style={styles.input} placeholder="Email" placeholderTextColor="#666" keyboardType="email-address" onChangeText={(text) => setEmail(text)} />
+              <TextInput value={password} style={styles.input} placeholder="Password" placeholderTextColor="#666" secureTextEntry onChangeText={(text) => setPassword(text)} />
+              <TextInput value={retypePassword} style={styles.input} placeholder="Retype Password" placeholderTextColor="#666" secureTextEntry onChangeText={(text) => setRetypePassword(text)} />
+
+              <TouchableOpacity style={styles.signUpButton} onPress={signUp}>
+                <Text style={styles.signUpButtonText}>Sign Up</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableWithoutFeedback>
+      </ScrollView>
+    </SafeAreaView>
+  );
+};
+
+
+export default CreateAccount;
+
+
+// --- C:\Users\S\Desktop\assignments-master\WasteWise-main\WasteWise-main\src\screens\GuestHomeScreen.js ---
+
+import { StatusBar } from 'expo-status-bar';
+import React, { useContext } from 'react';
+import { StyleSheet, Text, View, Dimensions, ScrollView, SafeAreaView } from 'react-native';
+import TestChart from '../components/pie-chart';
+import HeaderLogo from '../components/headerLogo'; // Import the HeaderLogo component
+import ThemeContext from '../context/ThemeContext';
+
+
+
+export default function GuestHomeScreen({ navigation }) {
+
+    const { theme, toggleTheme } = useContext(ThemeContext);
+
+    // Get screen dimensions
+    const { width } = Dimensions.get('window');
+
+    const baseFontSize = width > 600 ? 24 : 16; // Example breakpoint at 600
+
+    const Square = () => {
+        return <View style={styles.square} />;
+    };
+    const Square1 = () => {
+        return <View style={styles.square1} />;
+    };
+    const Square2 = () => {
+        return <View style={styles.square2} />;
+    };
+
+    // Edit style stuff here
+    const styles = StyleSheet.create({
+        safeArea: {
+            flex: 1,
+            backgroundColor: theme === 'dark' ? '#042222' : '#C4D8BF',
+        },
+        container: {
+            flex: 1,
+            backgroundColor: theme === 'dark' ? '#042222' : '#C4D8BF',
+            alignSelf: 'center',
+            alignItems: 'center',
+            justifyContent: 'flex-start',
+            paddingTop: 5,
+            width: '85%',
+        },
+        chartContainer: {
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginVertical: 10, // Add vertical margin to adjust spacing
+            paddingBottom: 20,
+            width: '85%',
+            alignSelf: 'center',
+        },
+
+
+        welcome_text: {
+            fontSize: 50,
+            fontFamily: 'Nunito-Regular',
+            color: theme === 'dark' ? '#F8F8F8' : '#2D5A3D',
+            textAlign: 'center', // Center the text
+            marginBottom: 20, // Add margin to separate from the chart
+        },
+
+        name: {
+            color:  theme === 'dark' ? '#00DF82' : '#68A77C',
+            fontFamily: 'Nunito-Regular',
+        },
+
+        squares_container: {
+            paddingTop: 50,
+            flexDirection: 'row', // Arrange squares horizontally
+            alignItems: 'center', // Align squares vertically centered
+        },
+
+        square: {
+            width: 50,
+            height: 50,
+            backgroundColor: '#2D5A3D',
+            marginHorizontal: 5, // Add horizontal margin between squares
+        },
+        square1: {
+            width: 50,
+            height: 50,
+            backgroundColor: '#99DAB3',
+            marginHorizontal: 5, // Add horizontal margin between squares
+        },
+        square2: {
+            width: 50,
+            height: 50,
+            backgroundColor: '#FFFFFF',
+            marginHorizontal: 5, // Add horizontal margin between squares
+        },
+        category: {
+            color: theme === 'dark' ? '#F8F8F8' : '#2D5A3D',
+            marginHorizontal: 5, // Add horizontal margin between text and squares
+            fontSize: 10,
+            fontFamily: 'Nunito-Regular',
+            textAlign: 'center', // Center the text
+        },
+
+        summary_container: {
+            paddingTop: 75,
+            paddingBottom: 40,
+            alignItems: 'center',
+            width: '90%', // Ensure the container takes the full width
+            justifyContent: 'center',
+        },
+        summary_text: {
+            fontSize: 15,
+            fontFamily: 'Nunito-Regular',
+            color: theme === 'dark' ? '#F8F8F8' : '#2D5A3D',
+            textAlign: 'center',
+        },
+        summary_word: {
+            color: theme === 'dark' ? '#F8F8F8' : '#2D5A3D',
+            fontFamily: 'Nunito-Regular',
+        },
+        name: {
+            color: theme === 'dark' ? '#00DF82' : '#68A77C',
+            fontFamily: 'Nunito-Regular',
+        },
+    });
+
+
+    return (
+        <SafeAreaView style={styles.safeArea}>
+            <HeaderLogo />
+            <ScrollView contentContainerStyle={styles.scrollViewContainer}>
+                <View style={styles.container}>
+                    <StatusBar style="auto" />
+                    <Text style={styles.welcome_text}>
+                        Sign in to unlock features.
+                    </Text>
+
+
+                </View>
+            </ScrollView>
+        </SafeAreaView>
+    );
+}
+
+
+
+// --- C:\Users\S\Desktop\assignments-master\WasteWise-main\WasteWise-main\src\screens\GuestProfileScreen.js ---
+
+import React, { useContext } from 'react';
+import { View, StyleSheet, Dimensions, Text } from 'react-native';
+import GuestProfileHeader from '../components/GuestProfileHeader';
+import Settings from '../components/settingsPage';
+import History from '../components/scanHistory';
+import Social from '../components/social';
+import { createMaterialTopTabNavigator } from '@react-navigation/material-top-tabs';
+import Leaderboard from '../components/Leaderboard';
+import ThemeContext from '../context/ThemeContext';
+
+const { width } = Dimensions.get('window');
+const baseFontSize = width > 350 ? 16 : 14;
+
+const Tab = createMaterialTopTabNavigator();
+
+export default function GuestProfileScreen({ navigation }) {
+  const { theme } = useContext(ThemeContext);
+
+  const profileData = {
+    profileImage: 'https://i.pinimg.com/564x/1b/2d/d6/1b2dd6610bb3570191685dcfb3e5e68e.jpg',
+    username: 'Guest',
+    bio: 'Sign In',
+  };
+
+  const styles = StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: theme === 'dark' ? '#042222' : '#C4D8BF',
+    },
+    scene: {
+      flex: 1,
+    },
+    welcome_text: {
+        fontSize: 45,
+        fontFamily: 'Nunito-Regular',
+        color: theme === 'dark' ? '#F8F8F8' : '#2D5A3D',
+        textAlign: 'center', // Center the text
+        marginBottom: 20, // Add margin to separate from the chart
+    },
+  });
+
+  return (
+    <View style={styles.container}>
+      <GuestProfileHeader
+        profileImage={profileData.profileImage}
+        username={profileData.username}
+        bio={profileData.bio}
+        navigation={navigation}
+      />
+      <Text style={styles.welcome_text}> 
+        Sign in to unlock features!
+      </Text>
+    </View>
+  );
+}
+
+// Dummy components for each tab
+function HistoryScreen({ navigation }) {
+  const { theme } = useContext(ThemeContext);
+  const styles = StyleSheet.create({
+    scene: {
+      flex: 1,
+      backgroundColor: theme === 'dark' ? '#042222' : '#C4D8BF',
+    },
+  });
+
+  return (
+    <View style={styles.scene}>
+      <History navigation={navigation} />
+    </View>
+  );
+}
+
+function RanksScreen({ navigation }) {
+  const { theme } = useContext(ThemeContext);
+  const styles = StyleSheet.create({
+    scene: {
+      flex: 1,
+      backgroundColor: theme === 'dark' ? '#042222' : '#C4D8BF',
+    },
+  });
+
+  return (
+    <View style={styles.scene}>
+      <Leaderboard navigation={navigation} />
+    </View>
+  );
+}
+
+function SocialScreen({ navigation }) {
+  const { theme } = useContext(ThemeContext);
+  const styles = StyleSheet.create({
+    scene: {
+      flex: 1,
+      backgroundColor: theme === 'dark' ? '#042222' : '#C4D8BF',
+    },
+  });
+
+  return (
+    <View style={styles.scene}>
+      <Social navigation={navigation} />
+    </View>
+  );
+}
+
+function SettingsScreen({ navigation }) {
+  const { theme } = useContext(ThemeContext);
+  const styles = StyleSheet.create({
+    scene: {
+      flex: 1,
+      backgroundColor: theme === 'dark' ? '#042222' : '#C4D8BF',
+    },
+  });
+
+  return (
+    <View style={styles.scene}>
+      <Settings navigation={navigation} />
+    </View>
+  );
+}
+
+
+// --- C:\Users\S\Desktop\assignments-master\WasteWise-main\WasteWise-main\src\screens\HomeScreen.js ---
+
+import { StatusBar } from 'expo-status-bar';
+import React, { useContext, useState, useEffect } from 'react';
+import { StyleSheet, Text, View, Dimensions, ScrollView, SafeAreaView } from 'react-native';
+import TestChart from '../components/pie-chart';
+import HeaderLogo from '../components/headerLogo';
+import ThemeContext from '../context/ThemeContext';
+import { FIREBASE_AUTH, FIRESTORE_DB } from '../../firebaseConfig'; // Ensure this imports correctly
+import { collection, query, where, onSnapshot, getDoc, doc } from 'firebase/firestore'; // Import Firestore functions correctly
+
+export default function HomeScreen({ navigation }) {
+    const { theme } = useContext(ThemeContext);
+    const [firstName, setFirstName] = useState('');
+    const [numberOfItems, setNumberOfItems] = useState(0);
+    const [counts, setCounts] = useState({ plastic: 0, metal: 0, ewaste: 0 });
+
+    useEffect(() => {
+        const fetchDataFromFirestore = async () => {
+            try {
+                const currentUser = FIREBASE_AUTH.currentUser;
+                if (currentUser) {
+                    const userId = currentUser.uid;
+                    const userDocRef = doc(FIRESTORE_DB, 'users', userId); // Ensure doc is correctly imported
+                    const userDocSnap = await getDoc(userDocRef); // Use getDoc function from Firestore
+
+                    if (userDocSnap.exists()) {
+                        const userData = userDocSnap.data();
+                        setFirstName(userData.firstName);
+                    } else {
+                        console.log('User document does not exist.');
+                    }
+                } else {
+                    console.log('No current user.');
+                }
+            } catch (error) {
+                console.error('Error fetching data:', error);
+            }
+        };
+
+        fetchDataFromFirestore();
+    }, []);
+
+    useEffect(() => {
+        let unsubscribeScannedItemsListener;
+
+        const fetchScannedItemsCount = async () => {
+            try {
+                const currentUser = FIREBASE_AUTH.currentUser;
+                if (currentUser) {
+                    const userId = currentUser.uid;
+                    const scannedItemsRef = collection(FIRESTORE_DB, 'scannedItems');
+                    const q = query(scannedItemsRef, where('userId', '==', userId));
+
+                    unsubscribeScannedItemsListener = onSnapshot(q, (querySnapshot) => {
+                        setNumberOfItems(querySnapshot.size);
+                        let plastic = 0;
+                        let metal = 0;
+                        let ewaste = 0;
+
+                        querySnapshot.forEach((doc) => {
+                            const data = doc.data();
+                            if (data.materialType === 'Plastic') {
+                                plastic += 1;
+                            } else if (data.materialType === 'Metal') {
+                                metal += 1;
+                            } else if (data.materialType === 'E-waste') {
+                                ewaste += 1;
+                            }
+                        });
+                        console.log(plastic, metal, ewaste);
+                        setCounts({ plastic, metal, ewaste });
+                    });
+                } else {
+                    console.log('No current user.');
+                }
+            } catch (error) {
+                console.error('Error fetching scanned items count:', error);
+            }
+        };
+
+        fetchScannedItemsCount();
+
+        return () => {
+            if (unsubscribeScannedItemsListener) {
+                unsubscribeScannedItemsListener(); // Cleanup function
+            }
+        };
+    }, []);
+
+    const { width } = Dimensions.get('window');
+    const baseFontSize = width > 600 ? 24 : 16;
+
+    const Square = () => {
+        return <View style={styles.square} />;
+    };
+    const Square1 = () => {
+        return <View style={styles.square1} />;
+    };
+    const Square2 = () => {
+        return <View style={styles.square2} />;
+    };
+
+    const styles = StyleSheet.create({
+        safeArea: {
+            flex: 1,
+            backgroundColor: theme === 'dark' ? '#042222' : '#C4D8BF',
+        },
+        container: {
+            flex: 1,
+            backgroundColor: theme === 'dark' ? '#042222' : '#C4D8BF',
+            alignSelf: 'center',
+            alignItems: 'center',
+            justifyContent: 'flex-start',
+            paddingTop: 5,
+            width: '85%',
+        },
+        chartContainer: {
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginVertical: 10,
+            paddingBottom: 20,
+            width: '85%',
+            alignSelf: 'center',
+        },
+        welcome_text: {
+            fontSize: 15,
+            fontFamily: 'Nunito-Regular',
+            color: theme === 'dark' ? '#F8F8F8' : '#2D5A3D',
+            textAlign: 'center',
+            marginBottom: 20,
+        },
+        name: {
+            color: theme === 'dark' ? '#00DF82' : '#68A77C',
+            fontFamily: 'Nunito-Regular',
+        },
+        squares_container: {
+            paddingTop: 50,
+            flexDirection: 'row',
+            alignItems: 'center',
+        },
+        square: {
+            width: 50,
+            height: 50,
+            backgroundColor: '#2D5A3D',
+            marginHorizontal: 5,
+        },
+        square1: {
+            width: 50,
+            height: 50,
+            backgroundColor: '#99DAB3',
+            marginHorizontal: 5,
+        },
+        square2: {
+            width: 50,
+            height: 50,
+            backgroundColor: '#FFFFFF',
+            marginHorizontal: 5,
+        },
+        category: {
+            color: theme === 'dark' ? '#F8F8F8' : '#2D5A3D',
+            marginHorizontal: 5,
+            fontSize: 10,
+            fontFamily: 'Nunito-Regular',
+            textAlign: 'center',
+        },
+        summary_container: {
+            paddingTop: 75,
+            paddingBottom: 40,
+            alignItems: 'center',
+            width: '90%',
+            justifyContent: 'center',
+        },
+        summary_text: {
+            fontSize: 15,
+            fontFamily: 'Nunito-Regular',
+            color: theme === 'dark' ? '#F8F8F8' : '#2D5A3D',
+            textAlign: 'center',
+        },
+        summary_word: {
+            color: theme === 'dark' ? '#F8F8F8' : '#2D5A3D',
+            fontFamily: 'Nunito-Regular',
+        },
+    });
+
+    return (
+        <SafeAreaView style={styles.safeArea}>
+            <HeaderLogo />
+            <ScrollView contentContainerStyle={styles.scrollViewContainer}>
+                <View style={styles.container}>
+                    <StatusBar style="auto" />
+                    <Text style={styles.welcome_text}>
+                        Hello, <Text style={styles.name}>{firstName}</Text>!
+                    </Text>
+
+                    <View style={styles.chartContainer}>
+                        <TestChart counts={numberOfItems} plastic={counts.plastic} metal={counts.metal} ewaste={counts.ewaste}/>
+
+                        <View style={styles.squares_container}>
+                            <Square />
+                            <Text style={styles.category}>Plastic</Text>
+                            <Square1 />
+                            <Text style={styles.category}>Metal</Text>
+                            <Square2 />
+                            <Text style={styles.category}>E-Waste</Text>
+                        </View>
+                    </View>
+
+                    <View style={styles.summary_container}>
+                        <Text style={styles.summary_text}>
+                            <Text style={styles.summary_word}>Summary:</Text>
+                            {"\n"}
+                            You've recycled a total of <Text style={styles.name}>{numberOfItems}</Text> items!
+                        </Text>
+                    </View>
+                </View>
+            </ScrollView>
+        </SafeAreaView>
+    );
+}
+
+// export const numberOfItems = 17;
+
+// --- C:\Users\S\Desktop\assignments-master\WasteWise-main\WasteWise-main\src\screens\Identifier.js ---
+
+import React, { useState } from 'react';
+import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View, Image, Alert, Modal } from 'react-native';
+import { CameraView, useCameraPermissions } from 'expo-camera';
+import OpenAI from 'openai';
+import { OPENAI_API_KEY } from '@env';
+import { MaterialIcons, Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
+import { FIREBASE_AUTH, FIRESTORE_DB } from '../../firebaseConfig';
+import { collection, addDoc } from '../../firebaseConfig';
+
+const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
+
+export default function Identifier({ navigation }) {
+    const [facing, setFacing] = useState('back');
+    const [permission, requestPermission] = useCameraPermissions();
+    const [photoUri, setPhotoUri] = useState(null);
+    const [response, setResponse] = useState('');
+    const [modalVisible, setModalVisible] = useState(false);
+    const [loading, setLoading] = useState(false);
+    const [materialType, setMaterialType] = useState('');
+    const [disposal, setDisposal] = useState('');
+    const [name, setName] = useState('');
+
+    if (!permission) {
+        // Camera permissions are still loading.
+        return <View />;
+    }
+
+    if (!permission.granted) {
+        // Camera permissions are not granted yet.
+        return (
+            <View style={styles.container}>
+                <Text style={{ textAlign: 'center' }}>We need your permission to show the camera</Text>
+                <TouchableOpacity onPress={requestPermission} style={styles.permissionButton}>
+                    <Text style={styles.buttonText}>Grant Permission</Text>
+                </TouchableOpacity>
+            </View>
+        );
+    }
+
+    const toggleCameraFacing = () => {
+        setFacing(current => (current === 'back' ? 'front' : 'back'));
+    };
+
+    const takePicture = async () => {
+        if (cameraRef) {
+            try {
+                const photo = await cameraRef.takePictureAsync({ base64: true });
+                setPhotoUri(photo.uri);
+                setLoading(true);
+                analyzeImage(photo.base64);
+            } catch (error) {
+                console.error('Failed to take picture:', error);
+                Alert.alert('Error', 'Failed to take picture');
+            }
+        }
+    };
+
+    const pickImage = async () => {
+        try {
+            let result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ImagePicker.MediaTypeOptions.All,
+                allowsEditing: true,
+                aspect: [4, 3],
+                quality: 1,
+            });
+
+            console.log(result)
+
+            if (!result.cancelled) {
+                setPhotoUri(result.assets[0].uri);
+                //analyzeImage(result.assets[0].base64);
+                setLoading(true); // Set loading to true when picking image
+
+
+                if (result.assets[0].base64) {
+                    analyzeImage(result.assets[0].base64);
+                } else {
+                    // If base64 data is not provided, load the image from URI and convert
+                    const base64 = await getBase64FromUri(result.assets[0].uri);
+                    analyzeImage(base64);
+                }
+            } else {
+                setLoading(false); // Reset loading state if image selection is cancelled
+            }
+        } catch (error) {
+            console.error('Failed to pick image:', error);
+            Alert.alert('Error', 'Failed to pick image');
+            setLoading(false); // Reset loading state on error
+        }
+    };
+
+
+    const getBase64FromUri = async (uri) => {
+        try {
+            const response = await fetch(uri);
+            const blob = await response.blob();
+            return await blobToBase64(blob);
+        } catch (error) {
+            console.error('Failed to fetch image:', error);
+            throw error;
+        }
+    };
+
+    const blobToBase64 = async (blob) => {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                resolve(reader.result.split(',')[1]); // Remove the data URL prefix
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+        });
+    };
+
+    const saveScannedItem = async (materialType, disposal, name) => {
+        const user = FIREBASE_AUTH.currentUser;
+        if (user) {
+            try {
+                await addDoc(collection(FIRESTORE_DB, 'scannedItems'), {
+                    userId: user.uid,
+                    materialType: materialType,
+                    disposal: disposal,
+                    name: name,
+                    timestamp: new Date(),
+                });
+                console.log('Scanned item saved to Firestore');
+            } catch (error) {
+                console.error('Failed to save scanned item:', error);
+            }
+        }
+    };
+
+
+    const analyzeImage = async (base64) => {
+        const prompt = "Provide valid JSON output. Given these categories: E-waste, Food, Chemicals, Textiles, Metal, Plastic, classify the object in the image. Provide one column name 'name' which is the name of the object. Provide one column name 'material_type' which is the type of material of the object. Provide another column name 'disposal' which is the instructions on how to properly dispose of the material. Make the instructions limited to 50 words."
+        const params = {
+            model: "gpt-4o",
+            response_format: { "type": "json_object" },
+            messages: [
+                {
+                    role: "system",
+                    content: "You are a helpful recycling assistant designed to output JSON."
+                },
+                {
+                    role: "user",
+                    content: [
+                        { type: "text", text: prompt },
+                        {
+                            type: "image_url",
+                            image_url: {
+                                "url": `data:image/jpeg;base64,${base64}`,
+                                "detail": "low"
+                            },
+                        },
+                    ],
+                },
+            ],
+        };
+
+        try {
+            const response = await openai.chat.completions.create(params);
+            console.log('OpenAI API Response:', response.choices[0]);
+
+            const jsonResponse = JSON.parse(response.choices[0].message.content);
+            const { name, material_type, disposal } = jsonResponse;
+
+            setName(name);
+            setMaterialType(material_type);
+            setDisposal(disposal);
+            saveScannedItem(material_type, disposal, name);
+            setLoading(false);
+            setModalVisible(true);
+        } catch (error) {
+            console.error('Failed to analyze image:', error);
+            Alert.alert('Error', 'Failed to analyze image');
+            setLoading(false);
+        }
+    };
+
+    const getBinTypeForItem = (itemType) => {
+        switch (itemType.toLowerCase()) {
+            case 'plastic':
+                return 'General Recyclables';
+            case 'paper':
+                return 'General Recyclables';
+            case 'metal':
+                return 'General Recyclables';
+            case 'glass':
+                return 'General Recyclables';
+            case 'e-waste':
+                return 'E-waste';
+            // Add more cases as needed for different types of items
+            default:
+                return null; // No specific bin type found
+        }
+    };
+
+
+    const navigateToMapScreen = () => {
+        const binType = getBinTypeForItem(materialType);
+      
+        console.log(binType);
+        if (binType) {
+            setModalVisible(false);
+            navigation.navigate('Map', { binType, itemScanned: true });
+        } else {
+            Alert.alert('Error', 'No bin type found for the item');
+        }
+    };
+
+    let cameraRef;
+
+    return (
+        <View style={styles.container}>
+            <CameraView
+                style={styles.camera}
+                ref={ref => {
+                    cameraRef = ref;
+                }}
+                facing={facing}
+            >
+                <View style={styles.buttonContainer}>
+                    <TouchableOpacity style={styles.iconButton} onPress={toggleCameraFacing}>
+                        <MaterialIcons name="flip-camera-ios" size={40} color="white" />
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.iconButton} onPress={takePicture}>
+                        <Ionicons name="camera-outline" size={40} color="white" />
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.iconButton} onPress={pickImage}>
+                        <Ionicons name="images-outline" size={35} color="white" />
+                    </TouchableOpacity>
+                </View>
+            </CameraView>
+            {loading && (
+                <View style={styles.loadingContainer}>
+                    <ActivityIndicator size="large" color="#0000ff" />
+                </View>
+            )}
+            <Modal
+                animationType="slide"
+                transparent={true}
+                visible={modalVisible}
+                onRequestClose={() => {
+                    setModalVisible(!modalVisible);
+                }}
+            >
+                <TouchableOpacity style={styles.modalContainer} activeOpacity={1} onPressOut={() => setModalVisible(false)}>
+                    <View style={styles.modalContent}>
+                        <Image source={{ uri: photoUri }} style={{ width: 300, height: 300 }} />
+                        <Text style={{ marginTop: 20, textAlign: 'center' }}>Name: {name}</Text>
+                        <Text style={{ marginTop: 20, textAlign: 'center' }}>Material Type: {materialType}</Text>
+                        <Text style={{ marginTop: 20, textAlign: 'center' }}>Disposal: {disposal}</Text>
+                        <TouchableOpacity
+                            style={styles.navigateButton}
+                            onPress={() => {
+                                setModalVisible(false);
+                                navigateToMapScreen();
+                            }}
+                        >
+                            <Text style={styles.buttonText}>Navigate</Text>
+                        </TouchableOpacity>
+                    </View>
+                </TouchableOpacity>
+            </Modal>
+        </View>
+    );
+}
+
+const styles = StyleSheet.create({
+    container: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    camera: {
+        flex: 1,
+        width: '100%',
+    },
+    buttonContainer: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingHorizontal: 50,
+        paddingBottom: 20,
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+    },
+    iconButton: {
+        alignItems: 'center',
+        flex: 1,
+    },
+    text: {
+        fontSize: 18,
+        fontWeight: 'bold',
+        color: 'white',
+    },
+    modalContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    },
+    modalContent: {
+        width: '80%',
+        backgroundColor: 'white',
+        borderRadius: 10,
+        padding: 20,
+        alignItems: 'center',
+    },
+    navigateButton: {
+        marginTop: 20,
+        padding: 10,
+        backgroundColor: '#007BFF',
+        borderRadius: 5,
+    },
+    buttonText: {
+        color: 'white',
+        fontWeight: 'bold',
+    },
+    permissionButton: {
+        padding: 10,
+        backgroundColor: '#007BFF',
+        borderRadius: 5,
+        marginTop: 20,
+    },
+    loadingContainer: {
+        ...StyleSheet.absoluteFillObject,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    },
+});
+
+
+// --- C:\Users\S\Desktop\assignments-master\WasteWise-main\WasteWise-main\src\screens\infoScreen.js ---
+
+import React, { useState, useContext } from 'react';
+import { View, Text, StyleSheet, ScrollView, SafeAreaView, Image, TouchableOpacity, Modal, TextInput, Button } from 'react-native';
+import HeaderLogo from '../components/headerLogo';
+import ThemeContext from '../context/ThemeContext';
+import Recycle from '../../assets/recycle.png';
+import EWaste from '../../assets/e-waste.png';
+import FoodWaste from '../../assets/food-waste.png';
+import { collection, addDoc } from 'firebase/firestore';
+import { FIRESTORE_DB } from '../../firebaseConfig'; // Update this path to your actual Firebase config file
+
+const recyclingData = [
+    {
+        image: Recycle,
+        description: 'Recycle',
+        products: ['Empty Plastic Water Bottles', 'Tin Soda Cans', 'Paper'],
+    },         
+    {
+        image: EWaste,
+        description: 'E-Wastes',
+        products: ['Laptops With LCD Monitors', 'LCD Plasma TV', 'OLED Tablets'],
+    },
+    {
+        image: FoodWaste,
+        description: 'Food Wastes',
+        products: ['Coffee Grounds', 'Egg Shells', 'Fruits'],
+    },
+    // Add more recycling symbols and their descriptions here
+];
+
+const RecyclingInfoPage = () => {
+    const { theme } = useContext(ThemeContext);
+    const [modalVisible, setModalVisible] = useState(false);
+    const [location, setLocation] = useState('');
+    const [guidelines, setGuidelines] = useState('');
+
+    const handleSave = async () => {
+        try {
+            console.log('Saving data to Firestore...');
+            const docRef = await addDoc(collection(FIRESTORE_DB, 'disposalGuidelines'), {
+                location,
+                guidelines
+            });
+            console.log('Document written with ID: ', docRef.id);
+            
+            setModalVisible(false);
+            setLocation('');
+            setGuidelines('');
+        } catch (error) {
+            console.error('Error adding document: ', error);
+        }
+    };
+
+    const styles = StyleSheet.create({
+        safeArea: {
+            flex: 1,
+            backgroundColor: theme === 'dark' ? '#042222' : '#C4D8BF',
+        },
+        container: {
+            flex: 1,
+            padding: 20,
+            backgroundColor: theme === 'dark' ? '#042222' : '#C4D8BF',
+        },
+        titleContainer: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center', // Center the title container
+            position: 'relative', // Needed for absolute positioning of the addButton
+            marginBottom: 20, // Add margin to separate from content
+            height: '4%',
+        },
+        title: {
+            fontSize: 24,
+            fontWeight: 'bold',
+            color: theme === 'dark' ? '#C4D8BF' : '#2D5A3D',
+            fontFamily: 'Nunito-Regular',
+            fontWeight: 'bold',
+            textAlign: 'center', // Ensure text is centered
+            flex: 1, // Center the title text
+        },
+        addButtonContainer: {
+            position: 'absolute',
+            right: 20,
+            top: 0,
+            bottom: 0,
+            justifyContent: 'center',
+        },
+        addButtonText: {
+            fontSize: 15,
+            color: theme === 'dark' ? '#C4D8BF' : '#2D5A3D',
+            fontFamily: 'Nunito-Bold',
+            padding: 10,
+        },
+        card: {
+            backgroundColor: theme === 'dark' ? '#9FBCA5' : '#f5fff0',
+            borderRadius: 10,
+            padding: 15,
+            marginBottom: 20,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.1,
+            shadowRadius: 5,
+        },
+        symbolImage: {
+            width: 100,
+            height: 100,
+            resizeMode: 'contain',
+            alignSelf: 'center',
+        },
+        description: {
+            fontSize: 16,
+            color: '#2D5A3D',
+            marginVertical: 10,
+            textAlign: 'center',
+            fontFamily: 'Nunito-Regular',
+        },
+        productsTitle: {
+            fontSize: 17,
+            fontFamily: 'Nunito-Medium',
+            marginTop: 10,
+            color: '#2D5A3D',
+        },
+        productItem: {
+            fontSize: 16,
+            fontFamily: 'Nunito-Regular',
+            color: '#2D5A3D',
+            marginVertical: 2,
+        },
+        modalView: {
+            flex: 1,
+            justifyContent: 'center',
+            alignItems: 'center',
+            backgroundColor: 'rgba(0,0,0,0.5)',
+        },
+        modalContent: {
+            width: '80%',
+            backgroundColor: theme === 'dark' ? '#042222' : '#C4D8BF',
+            borderRadius: 10,
+            padding: 20,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.25,
+            shadowRadius: 4,
+            elevation: 5,
+        },
+        modalTitle: {
+            fontFamily: 'Nunito',
+            fontSize: 18,
+            marginBottom: 5,
+            color: theme === 'dark' ? '#C4D8BF' : '#2D5A3D',
+        },
+        modalSubtitle: {
+            fontSize: 12,
+            color: '#f57373',
+            marginBottom: 15,
+        },
+        input: {
+            height: 40,
+            borderColor: theme === 'dark' ? '#C4D8BF' : '#2D5A3D',
+            borderWidth: 1,
+            borderRadius: 5,
+            marginBottom: 15,
+            paddingHorizontal: 10,
+            color: theme === 'dark' ? '#C4D8BF' : '#2D5A3D',
+        },
+    });
+
+    return (
+        <SafeAreaView style={styles.safeArea}>
+            <HeaderLogo />
+            <View style={styles.titleContainer}>
+                <Text style={styles.title}>Disposal Info</Text>
+                <View style={styles.addButtonContainer}>
+                    <TouchableOpacity onPress={() => setModalVisible(true)}>
+                        <Text style={styles.addButtonText}>Add</Text>
+                    </TouchableOpacity>
+                </View>
+            </View>
+            <ScrollView style={styles.container}>
+                {recyclingData.map((item, index) => (
+                    <View key={index} style={styles.card}>
+                        <Image source={item.image} style={styles.symbolImage} />
+                        <Text style={styles.description}>{item.description}</Text>
+                        <Text style={styles.productsTitle}>Common Products:</Text>
+                        {item.products.map((product, idx) => (
+                            <Text key={idx} style={styles.productItem}>• {product}</Text>
+                        ))}
+                    </View>
+                ))}
+            </ScrollView>
+            <Modal
+                animationType="fade"
+                transparent={true}
+                visible={modalVisible}
+                onRequestClose={() => setModalVisible(false)}
+            >
+                <TouchableOpacity style={styles.modalView} activeOpacity={1} onPressOut={() => setModalVisible(false)}>
+                    <View style={styles.modalContent}>
+                        <Text style={styles.modalTitle}>Tell us the recycling guidelines of your city/trash center!</Text>
+                        <Text style={styles.modalSubtitle}>Please be sure to mention the city.</Text>
+                        <TextInput
+                            style={styles.input}
+                            placeholder="Location of Interest"
+                            placeholderTextColor={theme === 'dark' ? '#C4D8BF80' : '#2D5A3D80'}
+                            value={location}
+                            onChangeText={setLocation}
+                        />
+                        <TextInput
+                            style={styles.input}
+                            placeholder="Disposal Guidelines"
+                            placeholderTextColor={theme === 'dark' ? '#C4D8BF80' : '#2D5A3D80'}
+                            value={guidelines}
+                            onChangeText={setGuidelines}
+                        />
+                        <Button title="Save" onPress={handleSave} color={theme === 'dark' ? '#C4D8BF' : '#2D5A3D'} />
+                    </View>
+                </TouchableOpacity>
+            </Modal>
+        </SafeAreaView>
+    );
+};
+
+export default RecyclingInfoPage;
+
+
+// --- C:\Users\S\Desktop\assignments-master\WasteWise-main\WasteWise-main\src\screens\loading.js ---
+
+import { StatusBar } from 'expo-status-bar';
+import React, { useEffect, useState } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
+import * as Font from 'expo-font';
+import { FontAwesome } from '@expo/vector-icons';
+
+export default function App() {
+  const [fontsLoaded, setFontsLoaded] = useState(false);
+
+  useEffect(() => {
+    async function loadFonts() {
+      await Font.loadAsync({
+        'CustomFont': require('./assets/fonts/NunitoRegular-vmABZ.ttf'),
+      });
+      setFontsLoaded(true);
+    }
+    loadFonts();
+  }, []);
+
+  if (!fontsLoaded) {
+    return null; // You can return a loading indicator here
+  }
+
+  return (
+    <View style={styles.container}>
+      <FontAwesome name="recycle" size={40} color="#2D5A3D" />
+      <View style={styles.title_container}>
+        <Text style={styles.title}>
+          Waste
+          <Text style={styles.title2}>Wise</Text>
+        </Text>
+      </View>
+      <Text style={styles.subtitle}>Recycle Smarter,</Text>
+      <Text style={styles.subtitle}>Not Harder</Text>
+      <StatusBar style="auto" />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#C4D8BF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  title: {
+    fontSize: 40,
+    fontFamily: 'Nunito-Regular',
+    color: '#34724B',
+  },
+
+  title2: {
+    color: '#FCFCFE',
+    fontFamily: 'Nunito-Regular',
+  },
+  
+  subtitle: {
+    fontSize: 15,
+    fontFamily: 'Nunito-Regular',
+    color: '#34724B',
+  },
+});
+
+
+// --- C:\Users\S\Desktop\assignments-master\WasteWise-main\WasteWise-main\src\screens\LoginScreen.js ---
+
+import React, { useContext, useState } from 'react';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Dimensions, TouchableWithoutFeedback, Keyboard, SafeAreaView, ScrollView } from 'react-native';
+import { AntDesign } from '@expo/vector-icons';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { FIREBASE_AUTH } from '../../firebaseConfig';
+import ThemeContext from '../context/ThemeContext';
+
+
+
+const { width, height } = Dimensions.get('window');
+
+const LoginScreen = ({ navigation }) => {
+  const { theme, toggleTheme } = useContext(ThemeContext);
+  const [email, setEmail] = useState(''); 
+  const [password, setPassword] = useState('');
+  
+  
+
+  const styles = StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: theme === 'dark' ?  '#042222' : '#fff',
+      paddingHorizontal: 20,
+    },
+    headerContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginTop: height * 0.02, // Adjusted to 2% of screen height
+      position: 'relative', // Ensure relative positioning for absolute children
+      
+    },
+    iconContainer: {
+      position: 'absolute',
+      left: 20,
+      
+    },
+    headerText: {
+      fontSize: 24,
+      fontWeight: 'bold',
+      color: theme === 'dark' ? '#00DF82' : '#2D5A3D',
+    },
+    formContainer: {
+      alignItems: 'center',
+      marginTop: height * 0.05, // Further reduced from 10% to 5% of screen height
+    },
+    input: {
+      width: '80%', // Adjust width as needed
+      height: 50,
+      borderColor: '#ddd',
+      borderWidth: 1,
+      borderRadius: 5,
+      paddingHorizontal: 10,
+      marginVertical: 10,
+      backgroundColor: '#f5f5f5',
+    },
+    signUpButton: {
+      width: '80%', // Adjust width as needed
+      height: 50,
+      borderRadius: 5,
+      justifyContent: 'center',
+      alignItems: 'center',
+      backgroundColor: theme === 'dark' ? '#1AB385' : '#2D5A3D',
+      marginTop: 20,
+    },
+    signUpButtonText: {
+      color: '#fff',
+      fontSize: 18,
+    },
+    forgotPasswordButton: {
+      marginTop: 10,
+    },
+    forgotPasswordButtonText: {
+      color: theme === 'dark' ? '#1AB385' : '#2D5A3D',
+      fontSize: 16,
+    },
+    safeArea: {
+      flex: 1,
+      backgroundColor: theme === 'dark' ?  '#042222' : '#fff',
+    },
+    scrollViewContainer: {
+      flexGrow: 1,
+      
+    },
+  });
+
+  const signIn = async() => {
+    if (!email || !password ) {
+      alert('All fields are required!');
+      return;
+    }
+    
+    try {
+      const response = await signInWithEmailAndPassword(FIREBASE_AUTH, email, password);
+      console.log(response);
+      alert('Sign in successful');
+    } catch (error) {
+      console.log(error);
+      alert('Sign in failed:');
+    }
+  } 
+
+
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      <ScrollView contentContainerStyle={styles.scrollViewContainer}>
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <View style={styles.container}>
+            <View style={styles.headerContainer}>
+              <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconContainer}>
+                <AntDesign name="close" size={24} color="gray" />
+              </TouchableOpacity>
+              <Text style={styles.headerText}>Log In</Text>
+            </View>
+
+            <View style={styles.formContainer}>
+              <TextInput style={styles.input} value={email} placeholder="Email" placeholderTextColor="#666" keyboardType="email-address" onChangeText={(text) => setEmail(text)} />
+              <TextInput style={styles.input} value={password} placeholder="Password" placeholderTextColor="#666" secureTextEntry onChangeText={(text) => setPassword(text)} />
+
+              <TouchableOpacity style={styles.signUpButton} onPress={signIn}>
+                <Text style={styles.signUpButtonText}>Log In</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.forgotPasswordButton}>
+                <Text style={styles.forgotPasswordButtonText}>Forgot Your Password?</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableWithoutFeedback>
+      </ScrollView>
+    </SafeAreaView>
+  );
+};
+
+
+export default LoginScreen;
+
+
+// --- C:\Users\S\Desktop\assignments-master\WasteWise-main\WasteWise-main\src\screens\MapScreen.js ---
+
+import React, { useEffect, useState, useRef, useContext } from 'react';
+import { Text, View, TouchableOpacity, StyleSheet, Modal, TextInput, TouchableWithoutFeedback, Alert, Platform, Image, ActivityIndicator } from 'react-native';
+import MapView, { Marker, Callout } from 'react-native-maps';
+import * as Location from 'expo-location';
+import * as Linking from 'expo-linking';
+import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
+import BinModal from '../components/BinModal'; // Adjust the import path if needed
+import CustomAlert from '../components/alertModal'; // Adjust the import path if needed
+import ThemeContext from '../context/ThemeContext';
+import { useNavigation, useFocusEffect } from '@react-navigation/native'; // Import useNavigation
+import { getAuth } from 'firebase/auth';
+
+// Import Firestore and Storage functions
+import { FIRESTORE_DB, GeoPoint, Timestamp, collection, addDoc, getDocs, updateDoc, doc, setDoc, getDoc, FIREBASE_STORAGE } from '../../firebaseConfig';
+import { increment, deleteDoc, onSnapshot } from "firebase/firestore";
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import { analyzeImage } from '../backend/binAPI';
+
+const MapScreen = ({ route }) => {
+  const { theme, toggleTheme } = useContext(ThemeContext);
+  const navigation = useNavigation(); // Get the navigation prop
+  const [location, setLocation] = useState(null);
+  const [markers, setMarkers] = useState([]);
+  const [errorMsg, setErrorMsg] = useState(null);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [inputModalVisible, setInputModalVisible] = useState(false); // State for text input modal
+  const [binDescription, setBinDescription] = useState(''); // State for bin description
+  const [alertVisible, setAlertVisible] = useState(false); // State for custom alert modal
+  const [alertMessage, setAlertMessage] = useState(''); // State for alert message
+  const [binImageUri, setBinImageUri] = useState(null); // State for bin image URI
+  const [viewReportModalVisible, setViewReportModalVisible] = useState(false); // report display thing
+  const mapRef = useRef(null);
+
+  const [isLoading, setIsLoading] = useState(false);
+
+  const [reportModalVisible, setReportModalVisible] = useState(false); // State for report modal visibility
+  const [reportText, setReportText] = useState(''); // State for report text
+  const [selectedMarker, setSelectedMarker] = useState(null); // State for selected marker for reporting
+
+  //bin types stuff
+  const [types] = useState(['General Trash', 'General Recyclables', 'E-waste', 'Hazardous Waste']);
+  const [typeModalVisible, setTypeModalVisible] = useState(false); // State for type selection modal visibility
+  const [selectedTypes, setSelectedTypes] = useState([]); // State for selected types
+  const { binType, itemScanned } = route.params || {};
+  console.log('Received route params:', { binType, itemScanned });
+  const markerRefs = useRef({});
+  const [scannedItem, setScannedItem] = useState(itemScanned  || false); // state variable to keep track of number of scans
+
+
+  const navigateToNearestBin = () => {
+    console.log('Reached navigateToNearestBin function!');
+
+    if (markers.length === 0) {
+      console.log('Markers are not available:', markers);
+      return;
+    }
+
+    if (!location || markers.length === 0) return;
+
+    let nearestBin = null;
+    let minDistance = Number.MAX_SAFE_INTEGER;
+
+    markers.forEach((marker) => {
+      console.log('Checking marker:', marker);
+
+      if (marker.types && marker.types.includes(binType)) {
+        const distance = getDistance(
+          { latitude: location.latitude, longitude: location.longitude },
+          { latitude: marker.latitude, longitude: marker.longitude }
+        );
+
+        console.log(`Distance to marker ${marker.id}:`, distance);
+
+        if (distance < minDistance) {
+          nearestBin = marker;
+          minDistance = distance;
+        }
+      } else {
+        console.log(`Marker ${marker.id} does not match binType ${binType}`);
+      }
+    });
+
+    if (nearestBin && mapRef.current) {
+      console.log('Nearest bin found:', nearestBin);
+      mapRef.current.animateToRegion({
+        latitude: nearestBin.latitude,
+        longitude: nearestBin.longitude,
+        latitudeDelta: 0.01,
+        longitudeDelta: 0.01,
+      }, 1000);
+
+      // Show callout for the nearest marker
+      console.log('MarkerRefs:', markerRefs);
+      console.log('NearestBin:', nearestBin.id);
+      const nearestMarkerRef = markerRefs.current[nearestBin.id];
+      console.log(nearestMarkerRef);
+      if (nearestMarkerRef) {
+        nearestMarkerRef.showCallout();
+        console.log('Callout shown for nearest bin');
+      }
+    } else {
+      console.log('No nearest bin found that matches the binType');
+    }
+  };
+
+  useFocusEffect(
+    React.useCallback(() => {
+      const requestLocationPermission = async () => {
+        let { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          setErrorMsg('Permission to access location was denied');
+          return;
+        }
+        watchLocation();
+      };
+      requestLocationPermission();
+      fetchMarkers();
+      console.log('Fetching markers and location permission on focus');
+    }, [])
+  );
+
+  useEffect(() => {
+    if (markers.length && binType) {
+      console.log('Conditions met, calling navigateToNearestBin');
+      navigateToNearestBin();
+      setScannedItem(false); // Reset scanned state after navigation
+    }
+  }, [markers, binType, scannedItem]);
+
+  const watchLocation = async () => {
+    return new Promise((resolve, reject) => {
+      Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.Highest,
+          timeInterval: 5000,
+          distanceInterval: 1,
+        },
+        (location) => {
+          setLocation(location.coords);
+          if (mapRef.current) {
+            mapRef.current.animateToRegion({
+              latitude: location.coords.latitude,
+              longitude: location.coords.longitude,
+              latitudeDelta: 0.01,
+              longitudeDelta: 0.01,
+            }, 1000);
+          }
+          resolve();
+        },
+        (error) => {
+          setErrorMsg('Error watching location');
+          reject(error);
+        }
+      );
+    });
+  };
+
+  const animateToLocation = (coords) => {
+    if (mapRef.current) {
+      mapRef.current.animateToRegion({
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+        latitudeDelta: 0.01,
+        longitudeDelta: 0.01,
+      }, 1000);
+    }
+  };
+
+  const fetchMarkers = async () => {
+    try {
+      const binCollectionRef = collection(FIRESTORE_DB, 'bins');
+      const reportCollectionRef = collection(FIRESTORE_DB, 'reports');
+
+      onSnapshot(binCollectionRef, (binSnapshot) => {
+        onSnapshot(reportCollectionRef, (reportSnapshot) => {
+          const reports = reportSnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+          }));
+
+          const fetchedMarkers = binSnapshot.docs.map(doc => {
+            const data = doc.data();
+            const relatedReports = reports.filter(report => report.binId === doc.id);
+
+            return {
+              id: doc.id,
+              latitude: data.binLocation.latitude,
+              longitude: data.binLocation.longitude,
+              imageUrl: data.binImage,
+              description: data.binDescription,
+              types: data.binType,
+              reports: relatedReports,
+            };
+          });
+
+          setMarkers(fetchedMarkers);
+        }, (error) => {
+          console.error('Failed to get reports from DB:', error);
+          setAlertMessage('Failed to get reports from database');
+          setAlertVisible(true);
+        });
+      }, (error) => {
+        console.error('Failed to get bins from DB:', error);
+        setAlertMessage('Failed to get bins from database');
+        setAlertVisible(true);
+      });
+    } catch (error) {
+      console.error('Failed to set up snapshot listeners:', error);
+      setAlertMessage('Failed to set up snapshot listeners');
+      setAlertVisible(true);
+    }
+  };
+
+  const getDistance = (loc1, loc2) => {
+    const toRadian = (angle) => (Math.PI / 180) * angle;
+    const distance = (a, b) => (Math.PI / 180) * (a - b);
+    const RADIUS_OF_EARTH_IN_KM = 6371;
+
+    const dLat = distance(loc2.latitude, loc1.latitude);
+    const dLon = distance(loc2.longitude, loc1.longitude);
+
+    const lat1 = toRadian(loc1.latitude);
+    const lat2 = toRadian(loc2.latitude);
+
+    const a =
+      Math.pow(Math.sin(dLat / 2), 2) +
+      Math.pow(Math.sin(dLon / 2), 2) * Math.cos(lat1) * Math.cos(lat2);
+    const c = 2 * Math.asin(Math.sqrt(a));
+
+    return RADIUS_OF_EARTH_IN_KM * c * 1000; // distance in meters
+  };
+
+  const handleSaveTypes = (types) => {
+    setSelectedTypes(types);
+    setInputModalVisible(true);
+    setTypeModalVisible(false);
+  };
+
+  const handleToggleOption = (option) => {
+    setSelectedTypes((prevSelected) =>
+      prevSelected.includes(option)
+        ? prevSelected.filter((item) => item !== option)
+        : [...prevSelected, option]
+    );
+  };
+  const renderTypeSelectModal = () => (
+    <Modal
+      animationType="fade"
+      transparent={true}
+      visible={typeModalVisible}
+      onRequestClose={() => setTypeModalVisible(false)}
+    >
+      <TouchableWithoutFeedback onPress={() => setTypeModalVisible(false)}>
+        <View style={styles.modalContainer}>
+          <TouchableWithoutFeedback onPress={() => { }}>
+            <View style={styles.modalContentType}>
+              <Text style={styles.modalTitle}>Select Types</Text>
+              <View style={styles.optionsContainer}>
+                {types.map((option, index) => (
+                  <TouchableOpacity
+                    key={index}
+                    style={[
+                      styles.optionButton,
+                      selectedTypes.includes(option) && styles.selectedOptionButton,
+                    ]}
+                    onPress={() => handleToggleOption(option)}
+                  >
+                    <Text style={styles.optionText}>{option}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <TouchableOpacity style={styles.button} onPress={() => handleSaveTypes(selectedTypes)}>
+                <Text style={styles.buttonText}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableWithoutFeedback>
+        </View>
+      </TouchableWithoutFeedback>
+    </Modal>
+  );
+
+  const resetModalOptions = () => {
+    setSelectedTypes([]);
+  };
+
+  const takePhoto = async () => {
+    const auth = getAuth();
+    const user = auth.currentUser;
+
+    if (!user) {
+      setAlertMessage('Please sign in to add a bin!');
+      setAlertVisible(true);
+      return;
+    }
+    const options = {
+      mediaType: 'photo',
+      quality: 1,
+    };
+
+    Alert.alert(
+      'Take a Photo',
+      'Please take a photo of the bin.',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'OK',
+          onPress: async () => {
+            try {
+              resetModalOptions();
+              let result = await ImagePicker.launchCameraAsync(options);
+              console.log(result); // Log the entire result object to debug
+              if (result.cancelled || result.canceled) {
+                console.log('Camera operation was cancelled.');
+              } else if (result.assets && result.assets.length > 0) {
+                const { uri } = result.assets[0]; // Extract the uri property from the first object in the assets array
+                console.log(uri);
+                if (uri) {
+                  setIsLoading(true); // Start loading indicator
+                  const base64 = await getBase64(uri); // Convert image to base64
+                  const isBin = await analyzeImage(base64);
+                  setIsLoading(false); // Stop loading indicator
+                  if (isBin) {
+                    setBinImageUri(uri);
+                    setTypeModalVisible(true); // Show the type selection modal
+                  } else {
+                    Alert.alert('The image does not appear to be of a bin. Please try again or retake the image.');
+                  }
+                } else {
+                  console.error('Error: uri is undefined');
+                }
+              } else {
+                console.error('Error: No assets found');
+              }
+            } catch (error) {
+              console.error('Error taking photo:', error);
+            }
+          },
+        },
+      ],
+      { cancelable: true }
+    );
+  };
+
+  const getBase64 = async (uri) => {
+    const response = await fetch(uri);
+    const blob = await response.blob();
+    const reader = new FileReader();
+    return new Promise((resolve, reject) => {
+      reader.onloadend = () => {
+        resolve(reader.result.split(',')[1]);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  };
+
+  const uploadImageToFirebase = async (uri) => {
+    if (!uri) {
+      console.error('Invalid URI:', uri);
+      return;
+    }
+
+    try {
+      const manipulatedImage = await ImageManipulator.manipulateAsync(
+        uri,
+        [{ resize: { width: 800 } }],
+        { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG }
+      );
+
+      const resizedUri = manipulatedImage.uri;
+      const filename = resizedUri.substring(resizedUri.lastIndexOf('/') + 1);
+      const uploadUri = Platform.OS === 'ios' ? resizedUri.replace('file://', '') : resizedUri;
+      const storageRef = ref(FIREBASE_STORAGE, `binImages/${filename}`);
+      const img = await fetch(uploadUri);
+      const bytes = await img.blob();
+
+      await uploadBytes(storageRef, bytes);
+      const downloadUrl = await getDownloadURL(storageRef);
+      return downloadUrl;
+    } catch (error) {
+      console.error('Error during upload:', error.message);
+      console.error('Stack Trace:', error.stack);
+      return null;
+    }
+  };
+
+  const checkLocation = async () => {
+    const querySnapshot = await getDocs(collection(FIRESTORE_DB, 'bins'));
+    const existingBins = querySnapshot.docs.map(doc => {
+      const data = doc.data();
+      return {
+        latitude: data.binLocation.latitude,
+        longitude: data.binLocation.longitude,
+      };
+    });
+
+    const binExists = existingBins.some(bin => getDistance(
+      { latitude: location.latitude, longitude: location.longitude },
+      { latitude: bin.latitude, longitude: bin.longitude }
+    ) <= 6); // 6 meters is roughly 20 feet
+
+    if (binExists) {
+      setAlertMessage('A bin already exists at this location!');
+      setAlertVisible(true);
+      return;
+    }
+    else {
+      takePhoto();
+    }
+  }
+
+  const handleAddBin = async () => {
+    setIsLoading(true); // Set loading state to true
+    try {
+      const auth = getAuth();
+      const user = auth.currentUser;
+
+      if (!user) {
+        setAlertMessage('User is not authenticated');
+        setAlertVisible(true);
+        return;
+      }
+
+      const radius = 0.0001; // ~11 meters
+
+      // const querySnapshot = await getDocs(collection(FIRESTORE_DB, 'bins'));
+      // const existingBins = querySnapshot.docs.map(doc => {
+      //   const data = doc.data();
+      //   return {
+      //     latitude: data.binLocation.latitude,
+      //     longitude: data.binLocation.longitude,
+      //   };
+      // });
+
+      const downloadUrl = await uploadImageToFirebase(binImageUri); // Upload image after description
+
+      if (!downloadUrl) {
+        setAlertMessage('Failed to upload image');
+        setAlertVisible(true);
+        return;
+      }
+
+      const newBinData = {
+        binDescription: binDescription, // Include the bin description
+        binImage: downloadUrl, // Include the bin image URL
+        binType: selectedTypes,
+        addedBy: user.uid,
+        binApproval: null, // for AI filter
+        binLocation: new GeoPoint(location.latitude, location.longitude),
+        dateAdded: Timestamp.fromDate(new Date()),
+      };
+
+      const docRef = await addDoc(collection(FIRESTORE_DB, 'bins'), newBinData);
+
+      const newMarker = {
+        id: docRef.id, // Add the document ID to the marker
+        latitude: location.latitude,
+        longitude: location.longitude,
+        imageUrl: downloadUrl, // Include the image URL in the new marker
+        description: binDescription, // Include the description in the new marker
+        types: selectedTypes, // the types of the bin
+        reports: [] // Initialize reports as an empty array
+      };
+
+      // Use functional state update to ensure latest state
+      setMarkers(prevMarkers => [...prevMarkers, newMarker]);
+      setModalVisible(false);
+      setInputModalVisible(false); // Hide the text input modal
+      setBinDescription(''); // Clear the description input
+      setTypeModalVisible(false); // Hide the type selection modal
+      setBinImageUri(null); // Clear the image URI
+      setSelectedTypes([]); // Reset the selected types
+
+      // Show success message
+      setAlertMessage('Bin successfully added!');
+      setAlertVisible(true);
+    } catch (error) {
+      console.log(error);
+      setAlertMessage('Failed to add bin to database');
+      setAlertVisible(true);
+    } finally {
+      setIsLoading(false); // Reset loading state
+    }
+  };
+
+  const handleReportSubmit = async () => {
+    if (selectedMarker) {
+      if (reportText.length < 5) {
+        console.log("reportText is less than 5 characters");
+        alert('Brevity is key but please say a little more than that.');
+        return;
+      }
+      try {
+        await addDoc(collection(FIRESTORE_DB, 'reports'), {
+          binId: selectedMarker.id,
+          reportText,
+          timestamp: new Date(),
+          trueCount: 0,
+          falseCount: 0,
+          uid: user ? user.uid : null,
+        });
+        setAlertMessage('Report submitted successfully!');
+        setReportModalVisible(false); // Close the modal after submission
+        setReportText(''); // Clear the report text
+      } catch (error) {
+        setAlertMessage('Failed to submit report');
+        console.log(error);
+      }
+      setAlertVisible(true);
+    }
+  };
+
+  const handleVoteOnFirstReport = (selectedMarker, isTrueFalse) => {
+    if (!user) {
+      console.log("User not logged in");
+      alert("You must be logged in to vote.");
+      return;
+    }
+    if (selectedMarker.reports && selectedMarker.reports.length > 0) {
+      const firstReportId = selectedMarker.reports[0].id;
+      handleVote(firstReportId, isTrueFalse);
+    } else {
+      console.log("No reports available to vote on for this bin");
+    }
+  };
+
+  const handleVote = async (reportId, isTrueVote) => {
+    const reportRef = doc(FIRESTORE_DB, 'reports', reportId);
+
+    try {
+      // Firestore transaction to increment the correct counter
+      await updateDoc(reportRef, {
+        // Conditional update based on the value of isTrueVote
+        trueCount: isTrueVote ? increment(1) : increment(0),
+        falseCount: isTrueVote ? increment(0) : increment(1),
+      });
+
+      // Check if the criteria for deletion are met
+      const updatedDoc = await getDoc(reportRef);
+      const data = updatedDoc.data();
+
+      if (data.trueCount >= 5) {
+        // Remove the associated bin and its image
+        await deleteBinAndImage(data.binId);
+        await deleteDoc(reportRef);
+      }
+      // delete the report
+      if (data.falseCount >= 5) {
+        await deleteDoc(reportRef);
+      }
+
+      setViewReportModalVisible(false); // Close the modal after voting
+      alert('Thanks for your input!');
+    } catch (error) {
+      console.error('Failed to record vote:', error);
+      alert('Failed to record vote, please try again or send in a report to the team.');
+    }
+  };
+
+  const deleteBinAndImage = async (binId) => {
+    try {
+      const binRef = doc(FIRESTORE_DB, 'bins', binId);
+      const binDoc = await getDoc(binRef);
+
+      // if the bin doesn't exist for some reason (edge case)
+      if (!binDoc.exists()) {
+        console.log(`Bin with binId ${binId} does not exist.`);
+        return;
+      }
+
+      const binData = binDoc.data();
+      const imageUrl = binData.binImage;
+
+      // if the imageUrl for the bin exists
+      if (imageUrl) {
+        // Decode the URL to handle special characters
+        const decodedUrl = decodeURIComponent(imageUrl);
+        console.log('Decoded URL:', decodedUrl); // Debugging line
+
+        // Extract the filename from the decoded URL
+        const filename = decodedUrl.substring(decodedUrl.lastIndexOf('/') + 1, decodedUrl.indexOf('?'));
+        console.log('Filename:', filename); // Debugging line
+
+        const imageRef = ref(FIREBASE_STORAGE, `binImages/${filename}`);
+        await deleteObject(imageRef);  // Delete the image from Firebase Storage
+      }
+
+      await deleteDoc(binRef);  // Delete the bin document
+      console.log(`Bin and image deleted for binId ${binId}`);
+    } catch (error) {
+      console.error('Error deleting bin and image:', error);
+    }
+  };
+
+  const navigateToMarker = (marker) => {
+    const url = `http://maps.apple.com/?daddr=${marker.latitude},${marker.longitude}`;
+    Linking.openURL(url).catch(err => {
+      setAlertMessage('Failed to open navigation');
+      setAlertVisible(true);
+    });
+  };
+
+  const handleAlertConfirm = () => {
+    setAlertVisible(false);
+  };
+
+  const styles = StyleSheet.create({
+    calloutContainer: {
+      width: 200, // Adjust width as needed
+      padding: 10,
+      backgroundColor: theme === 'dark' ? '#042222' : '#dfebd8',
+      borderRadius: 10,
+      alignItems: 'center',
+    },
+    calloutTitle: {
+      color: theme === 'dark' ? '#C4D8BF' : '#2D5A3D',
+      fontFamily: 'Nunito',
+      fontWeight: 'bold',
+      marginBottom: 5,
+    },
+    calloutImage: {
+      width: '100%', // Use percentage to scale
+      height: 200, // Fixed height to maintain aspect ratio
+      marginBottom: 10,
+    },
+    typesContainer: {
+      margin: 5,
+    },
+    calloutTypes: {
+      fontFamily: 'Nunito',
+      fontSize: 10,
+      color: theme === 'dark' ? '#b7c4b3' : '#2D5A3D',
+    },
+    calloutTypesTitle: {
+      fontSize: 12,
+      fontFamily: 'Nunito',
+    },
+    calloutDescription: {
+      fontFamily: 'Nunito',
+      color: theme === 'dark' ? '#C4D8BF' : '#2D5A3D',
+      textAlign: 'center',
+      marginBottom: 2,
+    },
+    calloutNavigate: {
+      fontFamily: 'Nunito',
+      color: theme === 'dark' ? '#f9fff7' : 'green',
+      paddingBottom: 5,
+    },
+    calloutReport: {
+      fontSize: 10,
+      fontFamily: 'Nunito',
+      color: theme === 'dark' ? '#f9fff7' : 'green',
+    },
+    calloutReportPin: {
+      fontSize: 15,
+    },
+    modalContainer: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    },
+    modalContent: {
+      width: '90%', // Increase width to 90%
+      height: '25%', // Adjust height to ensure it takes more space
+      backgroundColor: theme === 'dark' ? '#042222' : '#C4D8BF',
+      padding: 20,
+      borderRadius: 10,
+      alignItems: 'center',
+    },
+    modalContentType: {
+      width: '90%', // Increase width to 90%
+      height: '30%', // Adjust height to ensure it takes more space
+      backgroundColor: theme === 'dark' ? '#042222' : '#C4D8BF',
+      padding: 20,
+      borderRadius: 10,
+      alignItems: 'center',
+    },
+    modalTitle: {
+      fontSize: 16, // Adjust font size to be smaller
+      color: theme === 'dark' ? '#C4D8BF' : '#2D5A3D',
+      fontFamily: 'Nunito',
+      fontWeight: 'bold',
+      marginBottom: 10, // Adjust bottom margin to be smaller
+      lineHeight: 20, // Adjust line height for better spacing
+    },
+    textInput: {
+      width: '100%',
+      padding: 15, // Increase padding
+      borderWidth: 1,
+      borderColor: theme === 'dark' ? '#b7c4b390' : '#2D5A3D',
+      color: theme === 'dark' ? '#b7c4b3' : '#2D5A3D',
+      borderRadius: 10, // Increase border radius
+      marginBottom: 20, // Increase bottom margin
+    },
+    button: {
+      backgroundColor: theme === 'dark' ? '#bed4bc' : '#2D5A3D',
+      padding: 13, // Increase padding
+      borderRadius: 10, // Increase border radius
+    },
+    buttonText: {
+      color: 'white',
+      fontFamily: 'Nunito',
+      fontWeight: 'bold',
+      fontSize: 12, // Increase font size
+    },
+    optionsContainer: {
+      marginBottom: 5,
+      justifyContent: 'center',
+      alignItems: 'center', // Center items horizontally
+    },
+    optionButton: {
+      padding: 5,
+      margin: 5,
+    },
+    selectedOptionButton: {
+      borderColor: theme === 'dark' ? '#C4D8BF' : '#2D5A3D',
+      borderWidth: 1,
+    },
+    optionText: {
+      color: theme === 'dark' ? '#C4D8BF' : '#2D5A3D',
+      fontSize: 14,
+      fontFamily: 'Nunito',
+    },
+    reportText: {
+      color: theme === 'dark' ? '#C4D8BF' : '#2D5A3D',
+      fontFamily: 'Nunito',
+      fontSize: 15,
+      justifyContent: 'center',
+      alignItems: 'center',
+      paddingTop: 20,
+    },
+    voteButton: {
+      backgroundColor: theme === 'dark' ? '#bed4bc' : '#2D5A3D',
+      padding: 10,
+      borderRadius: 10,
+      margin: 5,
+    },
+    voteButtonText: {
+      color: 'white',
+      fontFamily: 'Nunito',
+      fontWeight: 'bold',
+    },
+    loadingContainer: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      justifyContent: 'center',
+      alignItems: 'center',
+      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    },
+  });
+
+  return (
+    <View style={{ flex: 1 }}>
+      <MapView
+        ref={mapRef}
+        style={{ width: '100%', height: '100%' }}
+        initialRegion={{
+          latitude: 28.693602091083623,
+          longitude: 77.21464383448563,
+          latitudeDelta: 0.01,
+          longitudeDelta: 0.01,
+        }}
+        showsUserLocation
+        followsUserLocation
+      >
+        {markers.map((marker, index) => (
+          <Marker key={index} coordinate={marker} ref={ref => markerRefs.current[marker.id] = ref}>
+            <Callout tooltip>
+              <View style={styles.calloutContainer}>
+                <Text style={styles.calloutTitle}>Bin {index + 1}</Text>
+                {marker.imageUrl && (
+                  <Image
+                    source={{ uri: marker.imageUrl }}
+                    style={styles.calloutImage}
+                    resizeMode="contain"
+                  />
+                )}
+                {marker.description && (
+                  <Text style={styles.calloutDescription}>{marker.description}</Text>
+                )}
+                {marker.types && marker.types.length > 0 && (
+                  <View style={styles.typesContainer}>
+                    <Text style={styles.calloutTypes}>Types: {marker.types.join(', ')}</Text>
+                  </View>
+                )}
+                <TouchableOpacity onPress={() => navigateToMarker(marker)}>
+                  <Text style={styles.calloutNavigate}>Navigate Here</Text>
+                </TouchableOpacity>
+                {marker.reports && marker.reports.length > 0 ? (
+                  <TouchableOpacity onPress={() => {
+                    setSelectedMarker(marker);
+                    setViewReportModalVisible(true);
+                  }}>
+                    <Text style={styles.calloutReportPin}>❗</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity onPress={() => {
+                    setSelectedMarker(marker);
+                    setReportModalVisible(true);
+                  }}>
+                    <Text style={styles.calloutReport}>Report Bin Updates</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </Callout>
+          </Marker>
+        ))}
+      </MapView>
+
+      {/* Loading Indicator */}
+      {isLoading && (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#9ee8a4" />
+        </View>
+      )}
+      <TouchableOpacity
+        style={{
+          width: '90%',
+          height: 50,
+          alignSelf: 'center',
+          position: 'absolute',
+          backgroundColor: 'green',
+          bottom: 20,
+          justifyContent: 'center',
+          alignItems: 'center',
+        }}
+        onPress={checkLocation}
+      >
+        <Text style={{ color: 'white' }}>Add Bin</Text>
+      </TouchableOpacity>
+      <BinModal
+        visible={modalVisible}
+        onClose={() => setModalVisible(false)}
+        onNavigate={takePhoto}
+      />
+      {errorMsg ? <Text>{errorMsg}</Text> : null}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={inputModalVisible}
+        onRequestClose={() => setInputModalVisible(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setInputModalVisible(false)}>
+          <View style={styles.modalContainer}>
+            <TouchableWithoutFeedback onPress={() => { }}>
+              <View style={styles.modalContent}>
+                <Text style={styles.modalTitle}>Describe the bin location</Text>
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="Enter description"
+                  placeholderTextColor="#2D5A3D90"
+                  value={binDescription}
+                  onChangeText={setBinDescription}
+                />
+                <TouchableOpacity
+                  style={styles.button}
+                  onPress={handleAddBin}
+                  disabled={isLoading}
+                >
+                  {isLoading ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={styles.buttonText}>Add Bin</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={reportModalVisible}
+        onRequestClose={() => setReportModalVisible(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setReportModalVisible(false)}>
+          <View style={styles.modalContainer}>
+            <TouchableWithoutFeedback onPress={() => { }}>
+              <View style={styles.modalContent}>
+                <Text style={styles.modalTitle}>Report Bin Updates</Text>
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="Enter report"
+                  placeholderTextColor="#2D5A3D90"
+                  value={reportText}
+                  onChangeText={setReportText}
+                />
+                <TouchableOpacity
+                  style={styles.button}
+                  onPress={handleReportSubmit}
+                >
+                  <Text style={styles.buttonText}>Submit</Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+      {renderTypeSelectModal()}
+      <CustomAlert
+        visible={alertVisible}
+        title="Alert"
+        message={alertMessage}
+        onClose={() => setAlertVisible(false)}
+        onConfirm={handleAlertConfirm}
+      />
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={viewReportModalVisible}
+        onRequestClose={() => setViewReportModalVisible(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setViewReportModalVisible(false)}>
+          <View style={styles.modalContainer}>
+            <TouchableWithoutFeedback onPress={() => { }}>
+              <View style={styles.modalContent}>
+                <Text style={styles.modalTitle}>Bin Reports</Text>
+                {selectedMarker && selectedMarker.reports.map(report => (
+                  <Text key={report.id} style={styles.reportText}>{report.reportText}</Text>
+                ))}
+                <View style={{ flexDirection: 'row', padding: 30, justifyContent: 'space-between' }}>
+                  <TouchableOpacity
+                    style={[styles.voteButton, { marginRight: 15 }]}
+                    onPress={() => handleVoteOnFirstReport(selectedMarker, false)}
+                  >
+                    <Text style={styles.voteButtonText}>False</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.voteButton, { marginLeft: 15 }]}
+                    onPress={() => handleVoteOnFirstReport(selectedMarker, true)}
+                  >
+                    <Text style={styles.voteButtonText}>True</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+    </View>
+  );
+};
+
+export default MapScreen;
+
+// --- C:\Users\S\Desktop\assignments-master\WasteWise-main\WasteWise-main\src\screens\ProfileScreen.js ---
+
+import React, { useContext, useState, useEffect } from 'react';
+import { View, StyleSheet, Dimensions } from 'react-native';
+import ProfileHeader from '../components/profileHeader';
+import History from '../components/scanHistory';
+import Social from '../components/social';
+import { createMaterialTopTabNavigator } from '@react-navigation/material-top-tabs';
+import Leaderboard from '../components/Leaderboard';
+import ThemeContext from '../context/ThemeContext';
+import { FIREBASE_AUTH, FIRESTORE_DB } from '../../firebaseConfig';
+import { doc, getDoc } from 'firebase/firestore';
+
+import SettingsStack from '../backend/settingStack';  // Import the new SettingsStack component
+
+const { width } = Dimensions.get('window');
+const baseFontSize = width > 350 ? 16 : 14;
+
+const Tab = createMaterialTopTabNavigator();
+
+export default function ProfileScreen({ navigation }) {
+  const { theme } = useContext(ThemeContext);
+  const [profileData, setProfileData] = useState({
+    profileImage: 'https://i.pinimg.com/564x/1b/2d/d6/1b2dd6610bb3570191685dcfb3e5e68e.jpg', // default image
+    username: 'Guest',
+    bio: 'Change me',
+  });
+
+  useEffect(() => {
+    const fetchDataFromFirestore = async () => {
+      try {
+        const currentUser = FIREBASE_AUTH.currentUser;
+        if (currentUser) {
+          const userId = currentUser.uid;
+          const userDocRef = doc(FIRESTORE_DB, 'users', userId);
+          const userDocSnap = await getDoc(userDocRef);
+
+          if (userDocSnap.exists()) {
+            const userData = userDocSnap.data();
+            setProfileData({
+              profileImage: userData.profileImageLink || profileData.profileImage,
+              username: userData.username || '',
+              bio: userData.bio || 'Change me!',
+            });
+          } else {
+            console.log('User document does not exist.');
+          }
+        } else {
+          console.log('No current user.');
+        }
+      } catch (error) {
+        console.error('Error fetching data:', error);
+      }
+    };
+
+    fetchDataFromFirestore(); // Call the function inside useEffect to ensure it runs after the component mounts
+  }, []); // Empty dependency array ensures it runs only once after mounting
+
+  const updateProfileImage = (newImageUri) => {
+    setProfileData((prevData) => ({
+      ...prevData,
+      profileImage: newImageUri,
+    }));
+  };
+
+  const updateBio = (newBio) => {
+    setProfileData((prevData) => ({
+      ...prevData,
+      bio: newBio,
+    }));
+  };
+
+  const styles = StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: theme === 'dark' ? '#042222' : '#C4D8BF',
+    },
+    scene: {
+      flex: 1,
+    },
+  });
+
+  return (
+    <View style={styles.container}>
+      <ProfileHeader
+        profileImage={profileData.profileImage}
+        username={profileData.username}
+        bio={profileData.bio}
+        navigation={navigation}
+        onUpdateProfileImage={updateProfileImage} // Pass the callback to ProfileHeader
+        onUpdateBio={updateBio}
+      />
+      <Tab.Navigator
+        screenOptions={{
+          tabBarIndicatorStyle: { backgroundColor: '#2D5A3D', height: 2 },
+          tabBarLabelStyle: {
+            fontSize: baseFontSize,
+            fontFamily: 'Nunito-Regular',
+            color: theme === 'dark' ? '#C4D8BF' : '#2D5A3D',
+            textTransform: 'none',
+            marginBottom: -5,
+          },
+          tabBarStyle: {
+            backgroundColor: theme === 'dark' ? '#042222' : '#C4D8BF',
+            borderBottomWidth: 0,
+            shadowColor: 'transparent',
+            elevation: 0,
+          },
+          tabBarActiveTintColor: theme === 'dark' ? '#C4D8BF' : '#2D5A3D',
+          tabBarInactiveTintColor: '#2D5A3D',
+        }}
+      >
+        <Tab.Screen name="History" component={HistoryScreen} />
+        <Tab.Screen name="Ranks" component={RanksScreen} />
+        <Tab.Screen name="Social" component={SocialScreen} />
+        <Tab.Screen name="Settings">
+          {() => <SettingsStack onUpdateBio={updateBio} />}
+        </Tab.Screen>
+      </Tab.Navigator>
+    </View>
+  );
+}
+
+// Dummy components for each tab
+function HistoryScreen({ navigation }) {
+  const { theme } = useContext(ThemeContext);
+  const styles = StyleSheet.create({
+      scene: {
+        flex: 1,
+        backgroundColor: theme === 'dark' ? '#042222' : '#C4D8BF',
+      },
+  });
+
+  return (
+    <View style={styles.scene}>
+      <History navigation={navigation} />
+    </View>
+  );
+}
+
+function RanksScreen({ navigation }) {
+  const { theme } = useContext(ThemeContext);
+  const styles = StyleSheet.create({
+    scene: {
+      flex: 1,
+      backgroundColor: theme === 'dark' ? '#042222' : '#C4D8BF',
+    },
+  });
+
+  return (
+    <View style={styles.scene}>
+      <Leaderboard navigation={navigation} />
+    </View>
+  );
+}
+
+function SocialScreen({ navigation }) {
+  const { theme } = useContext(ThemeContext);
+  const styles = StyleSheet.create({
+    scene: {
+      flex: 1,
+      backgroundColor: theme === 'dark' ? '#042222' : '#C4D8BF',
+    },
+  });
+
+  return (
+    <View style={styles.scene}>
+      <Social navigation={navigation} />
+    </View>
+  );
+}
+
+
+// --- C:\Users\S\Desktop\assignments-master\WasteWise-main\WasteWise-main\src\screens\Scan.js ---
+
+import React from "react";
+import { View, Button, StyleSheet } from "react-native";
+import CameraScreen from "./cameraScreen";
+
+const Scan = ({ navigation }) => {
+  return (
+    <CameraScreen navigation={navigation}/>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+});
+
+export default Scan;
+
+// --- C:\Users\S\Desktop\assignments-master\WasteWise-main\WasteWise-main\src\screens\StartingScreen.js ---
+
+import React, { useContext } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Dimensions } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import Slideshow from '../components/startScreenSlide'; // Import the Slideshow component
+import ThemeContext from '../context/ThemeContext';
+
+export default function StartingScreen({ navigation }) {
+  const { theme } = useContext(ThemeContext);
+  const gradientColors = theme === 'dark' ? ['#042222', '#68A77C'] : ['#C4D8BF', '#E2FAEC'];
+
+  const styles = StyleSheet.create({
+    container: {
+      flex: 1,
+    },
+    safeArea: {
+      flex: 1,
+    },
+    header: {
+      alignItems: 'center',
+      marginVertical: 30,
+    },
+    title: {
+      fontSize: 25,
+      fontFamily: 'Nunito-SemiBold',
+      color: theme === 'dark' ? '#00DF82' : '#2D5A3D',
+    },
+    title2: {
+      color: '#FCFCFE',
+    },
+    content: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      width: Dimensions.get('window').width * 0.75,
+      height: Dimensions.get('window').height * 1.5,
+      alignSelf: 'center', // Center the container horizontally
+    },
+    footer: {
+      alignItems: 'center',
+      marginVertical: 50,
+      fontFamily: 'Nunito-Regular',
+    },
+    button: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 12,
+      paddingHorizontal: 32,
+      borderWidth: 1, // Add border width
+      borderColor: theme === 'dark' ? '#EDF7EA' : '#2D5A3D',
+      backgroundColor: 'transparent',
+      marginVertical: 10,
+      width: '60%', // Make the button width wider
+    },
+    buttonText: {
+      fontSize: 15,
+      lineHeight: 21,
+      letterSpacing: 0.25,
+      color: theme === 'dark' ? '#EDF7EA' : '#2D5A3D',
+    },
+    link: {
+      marginVertical: 10,
+    },
+    linkText: {
+      fontSize: 15,
+      color: theme === 'dark' ? '#EDF7EA' : '#2D5A3D',
+      textDecorationLine: 'none', // Remove underline
+    },
+  });
+
+  const handleGuestMode = () => {
+    navigation.navigate('GuestTabs'); // Navigate to a screen within the GuestStack
+  };
+
+  return (
+    <LinearGradient colors={gradientColors} style={styles.container}>
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.header}>
+          <Text style={styles.title}>
+            Waste
+            <Text style={styles.title2}>Wise</Text>
+          </Text>
+        </View>
+        <View style={styles.content}>
+          <Slideshow />
+        </View>
+        <View style={styles.footer}>
+          <TouchableOpacity style={[styles.button, styles.firstButton]} onPress={() => navigation.navigate('CreateAccount')}>
+            <Text style={styles.buttonText}>Get Started</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.link} onPress={() => navigation.navigate('LoginScreen')}>
+            <Text style={styles.linkText}>Already a member?</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.link} onPress={handleGuestMode}>
+            <Text style={styles.linkText}>Continue as Guest</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    </LinearGradient>
+  );
+}
+
+
+// --- C:\Users\S\Desktop\assignments-master\WasteWise-main\WasteWise-main\src\screens\UploadScreen.js ---
+
+import React from 'react';
+import { View, Text, StyleSheet, Button } from 'react-native';
+
+export default function UploadScreen({ navigation }) {
+    return (
+        <View style={styles.container}>
+          <Button title="Go Back" onPress={() => navigation.goBack()} />
+          <Text>Upload Screen</Text>
+        </View>
+    );
+}
+
+// Edit style stuff here
+const styles = StyleSheet.create({
+    container: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    text: {
+        fontSize: 26,
+        fontWeight: 'bold',
+    },
+});
+
